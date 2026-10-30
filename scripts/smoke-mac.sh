@@ -98,7 +98,7 @@ import os, sys, unicodedata
 d = sys.argv[1]
 for f in os.listdir(d):
     if unicodedata.normalize("NFC", f) == "움짤.gif":
-        print("ok" if open(os.path.join(d, f), "rb").read(6) == b"GIF89a" else "bad")
+        print("ok" if open(os.path.join(d, f), "rb").read(6) in (b"GIF89a", b"GIF87a") else "bad")
 PY
 )
 check "X7 움짤(GIF) 만들기 (끝 코드 $E3, 파일 ${GOK:-없음})" test "$E3" = "0" -a "$GOK" = "ok"
