@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="-14.27 -14.27 248.54 248.54">
+  <!-- CUTROAD 앱 아이콘: 타임라인 위 두 클립을 주황색 재생 위치 막대가 가르는 모양 · made by. Nevertheless_D -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1B1E25"/><stop offset="1" stop-color="#101216"/></linearGradient>
+  </defs>
+  <rect x="10" y="10" width="200" height="200" rx="45" fill="url(#bg)"/>
+  <rect x="10.5" y="10.5" width="199" height="199" rx="44.5" fill="none" stroke="#33373F"/>
+  <rect x="32" y="150" width="156" height="6" rx="3" fill="#262A33"/>
+  <rect x="32" y="166" width="156" height="6" rx="3" fill="#262A33"/>
+  <rect x="34" y="82" width="68" height="56" rx="10" fill="#4D86FF"/>
+  <rect x="40" y="114" width="56" height="18" rx="5" fill="#2E5FC4"/>
+  <rect x="122" y="82" width="64" height="56" rx="10" fill="#E8EAEE"/>
+  <rect x="128" y="114" width="52" height="18" rx="5" fill="#C9CDD5"/>
+  <rect x="106" y="58" width="10" height="132" rx="5" fill="#FF5A1F"/>
+  <path d="M96 44h30l-15 18z" fill="#FF5A1F"/>
+</svg>
