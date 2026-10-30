@@ -92,7 +92,7 @@ import json, sys
 s = json.load(open(sys.argv[1])); s["out"].update({"preset": "gif", "name": "움짤", "range": [0.5, 2.5]}); print(json.dumps(s, ensure_ascii=False))
 PY
 "$BIN" --test-export "$M/spec-gif.json" > "$OUT/export-gif.json" 2>&1; E3=$?; cat "$OUT/export-gif.json"
-check "X7 움짤(GIF) 만들기" bash -c "test $E3 = 0 && test -s '$M/out/움짤.gif' && head -c 6 '$M/out/움짤.gif' | grep -q GIF89a"
+check "X7 움짤(GIF) 만들기" python3 -c "import sys; d=open(sys.argv[1],'rb').read(6); sys.exit(0 if $E3==0 and d==b'GIF89a' else 1)" "$M/out/움짤.gif"
 cp "$M/out/움짤.gif" "$OUT/움짤.gif" 2>/dev/null
 
 python3 - "$M" > "$M/spec-quick.json" <<'PY'

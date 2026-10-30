@@ -212,6 +212,7 @@ CR.loadAssets = function (m) {
     CR.cache.thumbs[m.path] = { frames: [], interval: 0, loading: true };
     CR.native('thumbs', { path: m.path, height: 90 }).then((r) => {
       CR.cache.thumbs[m.path] = r || { frames: [] };
+      if (CR.P && !CR.P.thumb && r && r.frames && r.frames.length) CR.save(); // 처음 화면의 최근 프로젝트 그림
       CR.render && CR.render('media');
     }).catch(() => { CR.cache.thumbs[m.path] = { frames: [] }; });
   }

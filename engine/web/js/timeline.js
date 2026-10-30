@@ -174,7 +174,7 @@ CR.renderTimeline = function (host) {
   CR.S.fitPps = CR.ppsFor(viewW, L.total);
   if (CR.S.zoomFit) CR.S.pps = CR.S.fitPps;
   const pps = CR.S.pps;
-  const innerW = Math.max(viewW, L.total * pps + 160);
+  const innerW = Math.max(viewW, L.total * pps + 48);
   const inner = h('div', { class: 'tlinner', style: { width: innerW + 'px' } });
   scroll.appendChild(inner);
   CR.TL.inner = inner;

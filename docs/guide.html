@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>CUTROAD 사용 가이드</title>
+<!-- 사용 가이드 이미지 원본. scripts/guide.py 로 docs/CUTROAD_사용가이드.png 를 만들어요 -->
+<link rel="stylesheet" href="../engine/web/fonts/fonts.css">
+<style>
+:root { --bg:#0E0F12; --panel:#16181D; --field:#1F2229; --line:#2A2E37; --text:#ECEDEF; --sub:#A2A8B3; --dim:#868C98;
+  --accent:#FF5A1F; --v:#4D86FF; --vf:#1E3A70; --a:#4FD1C5; --af:#0F2C2C; --b:#6BD38A; --bf:#132F1F; --t:#A78BFA; --tf:#2B2350; }
+* { box-sizing: border-box; }
+body { margin: 0; width: 1200px; background: var(--bg); color: var(--text); font: 15px/1.6 'IBM Plex Sans KR', sans-serif; -webkit-font-smoothing: antialiased; }
+.mono { font-family: 'JetBrains Mono', monospace; }
+.hero { padding: 48px 56px 28px; display: flex; gap: 28px; align-items: center; border-bottom: 1px solid var(--line); }
+.hero svg { width: 112px; height: 112px; flex: none; }
+.hero h1 { margin: 0; font: 800 56px/1 'Archivo', sans-serif; font-stretch: 118%; letter-spacing: .03em; }
+.hero h1 b { color: var(--accent); }
+.hero p { margin: 10px 0 0; color: var(--sub); font-size: 17px; }
+.hero .ver { margin-left: auto; text-align: right; color: var(--dim); font-size: 13px; }
+.wrap { padding: 28px 56px 36px; display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 18px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; }
+.card.wide { grid-column: span 2; }
+.card h2 { margin: 0 0 10px; font-size: 18px; display: flex; align-items: center; gap: 10px; }
+.card h2 .n { width: 26px; height: 26px; border-radius: 8px; background: var(--accent); color: #1A0A03; font: 800 14px 'Archivo', sans-serif; display: grid; place-items: center; flex: none; }
+.card p, .card li { color: var(--sub); }
+.card ul { margin: 0; padding-left: 18px; }
+.card li { margin: 3px 0; }
+.card li b, .card p b { color: var(--text); }
+kbd { font: 600 12px 'JetBrains Mono', monospace; color: var(--text); background: var(--field); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; }
+.tl { margin-top: 12px; background: #121317; border: 1px solid var(--line); border-radius: 10px; padding: 12px 12px 12px 96px; position: relative; }
+.row { position: relative; height: 34px; margin-bottom: 6px; }
+.row .lab { position: absolute; left: -86px; top: 8px; font-size: 12px; color: var(--sub); display: flex; gap: 6px; align-items: center; }
+.row .lab i { width: 8px; height: 8px; border-radius: 2px; display: block; }
+.blk { position: absolute; top: 0; bottom: 0; border-radius: 6px; font-size: 11px; font-weight: 600; padding: 4px 8px; white-space: nowrap; overflow: hidden; }
+.ph { position: absolute; top: 4px; bottom: 4px; width: 2px; background: var(--accent); left: 360px; }
+.ph::before { content: ''; position: absolute; top: -4px; left: -6px; width: 14px; height: 10px; background: var(--accent); clip-path: polygon(0 0,100% 0,100% 45%,50% 100%,0 45%); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.chip { padding: 6px 10px; border-radius: 8px; background: var(--field); border: 1px solid var(--line); font-size: 13px; }
+.chip b { color: var(--text); } .chip small { color: var(--dim); font-family: 'JetBrains Mono', monospace; margin-left: 6px; }
+.warn { border-color: #5a2e1d; background: #1d1511; }
+.warn h2 .n { background: #FFB547; }
+.keys { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 6px 24px; font-size: 14px; color: var(--sub); }
+.keys div { display: flex; justify-content: space-between; gap: 10px; }
+.foot { padding: 0 56px 32px; display: flex; justify-content: space-between; color: var(--dim); font-size: 13px; }
+.foot b { font-family: 'Archivo', sans-serif; color: var(--sub); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="hero">
+  <svg viewBox="-14.27 -14.27 248.54 248.54" aria-hidden="true"><rect x="10" y="10" width="200" height="200" rx="45" fill="#16181d"/><rect x="10.5" y="10.5" width="199" height="199" rx="44.5" fill="none" stroke="#33373F"/><rect x="32" y="150" width="156" height="6" rx="3" fill="#262A33"/><rect x="32" y="166" width="156" height="6" rx="3" fill="#262A33"/><rect x="34" y="82" width="68" height="56" rx="10" fill="#4D86FF"/><rect x="40" y="114" width="56" height="18" rx="5" fill="#2E5FC4"/><rect x="122" y="82" width="64" height="56" rx="10" fill="#E8EAEE"/><rect x="128" y="114" width="52" height="18" rx="5" fill="#C9CDD5"/><rect x="106" y="58" width="10" height="132" rx="5" fill="#FF5A1F"/><path d="M96 44h30l-15 18z" fill="#FF5A1F"/></svg>
+  <div>
+    <h1>CUT<b>ROAD</b></h1>
+    <p>가볍게 자르고, 붙이고, 바로 내보내는 영상 편집기 · 사용 가이드</p>
+  </div>
+  <div class="ver">macOS · Apple Silicon<br>새 버전이 나오면 앱이 알아서 받아요</div>
+</div>
+
+<div class="wrap">
+  <div class="card">
+    <h2><span class="n">1</span>설치 · 시작</h2>
+    <ul>
+      <li><b>CUTROAD.app</b>을 <b>응용 프로그램</b> 폴더로 옮긴 뒤 열어요</li>
+      <li>처음에 경고가 뜨면 시스템 설정 → 개인정보 보호 및 보안 → <b>그래도 열기</b></li>
+      <li>영상(MOV · MP4)이나 소리(MP3 · WAV · M4A)를 창에 <b>끌어다 놓으면</b> 바로 시작</li>
+      <li>편집하면 <b>자동으로 저장</b>돼요. 처음 화면의 <b>최근 프로젝트</b>에서 다시 열어요</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h2><span class="n">2</span>컷 편집만</h2>
+    <p>위쪽 <b>[컷 편집만]</b>을 누르면 복잡한 것 없이 자르기만 하는 화면이 나와요.</p>
+    <ul>
+      <li>재생 위치에서 <b>여기서 자르기</b> <kbd>⌘B</kbd> → 필요 없는 조각을 눌러 <b>지우기</b> <kbd>⌫</kbd></li>
+      <li>지운 조각은 빗금으로 남아서 <b>되살리기</b>로 되돌릴 수 있어요</li>
+      <li><b>저장하기</b>는 다시 인코딩하지 않아서 <b>원래 화질 그대로</b>, 아주 빨라요</li>
+    </ul>
+  </div>
+
+  <div class="card wide">
+    <h2><span class="n">3</span>전체 편집 — 타임라인</h2>
+    <div class="tl">
+      <div class="row"><span class="lab"><i style="background:var(--t)"></i>자막 · 텍스트</span>
+        <div class="blk" style="left:0;width:110px;background:var(--tf);border:1px solid var(--t)">여름 여행</div>
+        <div class="blk" style="left:130px;width:220px;background:var(--tf);border:1px solid var(--t);font-weight:500">오늘은 바다 보러 왔어요</div></div>
+      <div class="row" style="height:44px"><span class="lab" style="top:13px"><i style="background:var(--v)"></i>영상</span>
+        <div class="blk" style="left:0;width:300px;background:var(--vf);border:2px solid #fff;color:#E8EEFF">바다</div>
+        <div class="blk" style="left:302px;width:200px;background:var(--vf);border:1px solid var(--v);color:#E8EEFF">카페</div>
+        <div class="blk" style="left:504px;width:300px;background:var(--vf);border:1px solid var(--v);color:#E8EEFF">노을</div></div>
+      <div class="row"><span class="lab"><i style="background:var(--a)"></i>영상 소리</span>
+        <div class="blk" style="left:0;width:804px;background:var(--af);border:1px solid #1E4A48;color:var(--a)">▁▃▅▇▅▃▂▁▃▆▇▆▃▁▁▁▁▁▂▅▇▆▄▂▃▅▇▅▃▂▁▃▆▇▆▃▁▂▅▇▆▄▂▃▅▇▅▃▂</div></div>
+      <div class="row" style="margin-bottom:0"><span class="lab"><i style="background:var(--b)"></i>배경음악</span>
+        <div class="blk" style="left:0;right:0;background:var(--bf);border:1px solid #22503A;color:#D7F5E1">산책.m4a · 볼륨 60% · 페이드 인/아웃</div></div>
+      <div class="ph"></div>
+    </div>
+    <div class="chips">
+      <span class="chip"><b>자르기</b><small>⌘B</small></span>
+      <span class="chip"><b>순서 바꾸기</b> 클립을 끌어서</span>
+      <span class="chip"><b>앞뒤 다듬기</b> 클립 양쪽 끝을 끌어서</span>
+      <span class="chip"><b>트랜지션</b> 클립 사이 ⧓ 버튼</span>
+      <span class="chip"><b>무음 구간 찾기</b> → 모두 잘라내기</span>
+      <span class="chip"><b>되돌리기</b><small>⌘Z</small></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">4</span>오른쪽 속성</h2>
+    <ul>
+      <li><b>클립</b>: 볼륨 · 페이드 인/아웃 · 속도(0.5~2배) · 블러 · 회전</li>
+      <li><b>트랜지션</b>: 디졸브 · 검은 화면 · 와이프 · 밀어내기 · 길이</li>
+      <li><b>텍스트</b>: 제목/자막 · 위치 · 크기 · 배경 상자 · 나오는 시간</li>
+      <li><b>배경음악</b>: 볼륨 · 페이드 · 시작 위치</li>
+      <li><b>프로젝트</b>: 화면 비율(가로 · 세로 · 1:1) · 맞춤</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h2><span class="n">5</span>자동 자막 · 내보내기</h2>
+    <ul>
+      <li><b>자동 자막</b>: 맥의 받아쓰기로 영상 소리를 자막으로. 처음엔 <b>음성 인식 허용</b>을 눌러 주세요</li>
+      <li>받아쓴 문장은 넣기 전에 바로 고칠 수 있어요</li>
+      <li><b>내보내기</b> <kbd>⌘E</kbd>: MP4 고화질 1080p · 4K · 용량 작게 · 세로 9:16 · 원본 그대로 · <b>움짤 GIF</b></li>
+      <li>다 되면 <b>Finder에서 보기</b>로 바로 찾아요</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">⌘</span>단축키</h2>
+    <div class="keys">
+      <div>재생 · 멈춤<kbd>Space</kbd></div><div>자르기<kbd>⌘B</kbd></div>
+      <div>지우기<kbd>⌫</kbd></div><div>되돌리기<kbd>⌘Z</kbd></div>
+      <div>한 장면 이동<kbd>← →</kbd></div><div>1초 이동<kbd>⇧← →</kbd></div>
+      <div>가져오기<kbd>⌘I</kbd></div><div>내보내기<kbd>⌘E</kbd></div>
+      <div>확대 · 축소<kbd>⌘+ ⌘−</kbd></div><div>컷 편집만<kbd>⌘2</kbd></div>
+    </div>
+  </div>
+  <div class="card warn">
+    <h2><span class="n">!</span>주의</h2>
+    <ul>
+      <li>영상 파일은 <b>복사하지 않고 원래 자리</b>에서 써요. 편집 중인 영상을 옮기거나 지우면 빨간 빗금으로 보여요</li>
+      <li>업데이트가 되려면 앱이 <b>응용 프로그램</b> 폴더에 있어야 해요</li>
+      <li>자동 자막이 안 되면 시스템 설정 → 개인정보 보호 및 보안 → <b>음성 인식</b>에서 CUTROAD를 켜 주세요</li>
+    </ul>
+  </div>
+</div>
+<div class="foot"><span>문제가 생기면 보기 → 진단 정보 보기 내용을 보내 주세요</span><b>made by. Nevertheless_D</b></div>
+</body>
+</html>
