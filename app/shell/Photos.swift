@@ -233,6 +233,12 @@ enum Beats {
             let den = a - 2 * b + c
             if den != 0 { period += 0.5 * (a - c) / den }
         }
+        // 박자가 반으로 잡히는 일(예: 120 → 60)을 막아요: 두 배 빠르기에서도 잘 맞으면 그쪽을 골라요
+        while 60 * fps / period < 90 {
+            let half = Int((period / 2).rounded())
+            guard half >= minLag, half < ac.count, 60 * fps / (period / 2) <= 150 else { break }
+            if ac[half] >= 0.35 * ac[Int(period.rounded())] { period /= 2 } else { break }
+        }
         let bpm = 60 * fps / period
 
         // 3) 박자 위치: 가장 잘 맞는 시작점을 찾고, 박자마다 가까운 튀는 곳에 살짝 맞춰요

@@ -95,6 +95,10 @@ enum TestTools {
             out(["count": paths.count, "ok": items.filter { $0["error"] == nil && $0["preview"] != nil }.count,
                  "portrait": items.filter { (($0["height"] as? Int) ?? 0) > (($0["width"] as? Int) ?? 0) }.count])
             return paths.isEmpty ? 1 : 0
+        case "--test-base":
+            do { let t = try Builder.baseTrack(); out(["ok": true, "duration": t.timeRange.end.seconds]); return 0 } catch {
+                out(["ok": false, "error": Exporter.detail(error)]); return 1
+            }
         case "--test-export":
             guard let p = a.first, let d = try? Data(contentsOf: URL(fileURLWithPath: p)),
                   let spec = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { print("spec 을 읽지 못했어요"); return 2 }

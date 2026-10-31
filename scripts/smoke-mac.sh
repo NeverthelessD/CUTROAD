@@ -149,6 +149,7 @@ print(json.dumps({"clips": clips, "audio": [{"path": m + "/박자120.wav", "star
   "beatFx": {"pulse": True, "flash": True, "shake": True, "beats": beats, "flashes": beats[::4], "climax": [[8, 14]]},
   "out": {"preset": "hd", "dir": m + "/out", "name": "사진 영상"}}, ensure_ascii=False))
 PY
+"$BIN" --test-base > "$OUT/base.json" 2>&1; cat "$OUT/base.json"
 "$BIN" --test-export "$M/spec-photo.json" > "$OUT/export-photo.json" 2>&1; E5=$?; cat "$OUT/export-photo.json"
 DP=$(dur_of "$M/out/사진 영상.mp4")
 check "S4 사진 10장 + 효과(움직임 · 색감 · 넘기기 10가지 · 박자 효과 · 액자 · 흐린 배경)로 MP4 (20.5초, 결과 ${DP:-?}초)" bash -c "test $E5 = 0 && python3 -c 'import sys; sys.exit(0 if abs(float(\"${DP:-0}\")-20.5)<0.2 else 1)'"

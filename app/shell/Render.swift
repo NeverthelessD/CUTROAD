@@ -677,16 +677,18 @@ enum Builder {
     static func baseTrack() throws -> AVAssetTrack {
         baseLock.lock(); defer { baseLock.unlock() }
         try? FileManager.default.createDirectory(at: Paths.cache, withIntermediateDirectories: true)
-        let url = Paths.cache.appendingPathComponent("base-v1.mov")
+        let url = Paths.cache.appendingPathComponent("base-v2.mov")
         if !FileManager.default.fileExists(atPath: url.path) {
-            let tmp = Paths.cache.appendingPathComponent("base-v1.\(getpid()).tmp.mov")
+            let tmp = Paths.cache.appendingPathComponent("base-v2-\(getpid())-tmp.mov")
             try? FileManager.default.removeItem(at: tmp)
             let w = try AVAssetWriter(outputURL: tmp, fileType: .mov)
-            let input = AVAssetWriterInput(mediaType: .video, outputSettings: [AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 64, AVVideoHeightKey: 64])
+            let input = AVAssetWriterInput(mediaType: .video, outputSettings: [AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 320, AVVideoHeightKey: 180])
+            input.expectsMediaDataInRealTime = false
             let ad = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
-                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA, kCVPixelBufferWidthKey as String: 64, kCVPixelBufferHeightKey as String: 64])
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA, kCVPixelBufferWidthKey as String: 320, kCVPixelBufferHeightKey as String: 180])
+            guard w.canAdd(input) else { throw RenderError("사진용 바탕을 준비하지 못했어요") }
             w.add(input)
-            guard w.startWriting() else { throw RenderError("사진용 바탕을 만들지 못했어요") }
+            guard w.startWriting() else { throw RenderError("사진용 바탕을 만들지 못했어요: \(w.error.map { Exporter.detail($0) } ?? "")") }
             w.startSession(atSourceTime: .zero)
             for f in 0..<300 {
                 while !input.isReadyForMoreMediaData { usleep(1000) }
@@ -702,7 +704,7 @@ enum Builder {
             let sem = DispatchSemaphore(value: 0)
             w.finishWriting { sem.signal() }
             sem.wait()
-            guard w.status == .completed else { throw RenderError("사진용 바탕을 만들지 못했어요") }
+            guard w.status == .completed else { throw RenderError("사진용 바탕을 마무리하지 못했어요: \(w.error.map { Exporter.detail($0) } ?? "")") }
             try? FileManager.default.removeItem(at: url)
             try FileManager.default.moveItem(at: tmp, to: url)
         }
@@ -776,9 +778,12 @@ enum Builder {
                 }
                 if i == 0 { shortSide = Int(min(c.w > 0 ? c.w : 1080, c.h > 0 ? c.h : 1080)) }
                 if includeVideo {
-                    let base = try baseTrack()
+                    let base: AVAssetTrack
+                    do { base = try baseTrack() } catch { throw RenderError("사진용 바탕을 만들지 못했어요: \(Exporter.detail(error))") }
                     let vt = vTrack(i)
-                    try insert(vt, from: base, inT: 0, outT: base.timeRange.end.seconds, at: plan.starts[i], dur: c.dur)
+                    do {
+                        try insert(vt, from: base, inT: 0, outT: base.timeRange.end.seconds, at: plan.starts[i], dur: c.dur)
+                    } catch { throw RenderError("사진 \(i + 1)번을 타임라인에 놓지 못했어요: \(Exporter.detail(error))") }
                     layers.append(Layer(trackID: vt.trackID, sourceRotation: 0, userRotation: c.rotate, start: plan.starts[i], end: plan.end(i),
                                         fadeIn: c.fadeIn, fadeOut: c.fadeOut, blur: c.blur, imagePath: c.path, motion: c.motion, filter: c.filter))
                 }

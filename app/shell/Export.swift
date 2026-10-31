@@ -98,9 +98,25 @@ enum Exporter {
             Log.write("내보내기 완료: \(dest.lastPathComponent) · \(size / 1_000_000)MB · \(Int(secs))초 \(note)")
             job.finish(["path": dest.path, "name": dest.lastPathComponent, "size": size, "seconds": secs, "note": note])
         } catch {
-            Log.write("⚠️ 내보내기 실패: \(error.localizedDescription)")
-            job.fail(job.isCancelled ? "취소했어요" : error.localizedDescription)
+            Log.write("⚠️ 내보내기 실패: \(Exporter.detail(error))")
+            job.fail(job.isCancelled ? "취소했어요" : Exporter.friendly(error))
         }
+    }
+
+    /// 진단 기록용: 맥이 알려 준 오류를 자세히 (종류 · 번호 · 원인)
+    static func detail(_ e: Error) -> String {
+        if let r = e as? RenderError { return r.message }
+        let n = e as NSError
+        var s = "\(n.localizedDescription) [\(n.domain) \(n.code)]"
+        if let f = n.localizedFailureReason { s += " " + f }
+        if let u = n.userInfo[NSUnderlyingErrorKey] as? NSError { s += " ← [\(u.domain) \(u.code)] \(u.localizedDescription)" }
+        return s
+    }
+
+    /// 화면에 보여 줄 말: 맥의 짧은 오류 문구 대신 무엇을 하다 안 됐는지 알려 줘요
+    static func friendly(_ e: Error) -> String {
+        if let r = e as? RenderError { return r.message }
+        return "영상을 만들지 못했어요 (" + detail(e) + ")"
     }
 
     static func uniqueURL(dir: URL, name: String, ext: String) -> URL {
