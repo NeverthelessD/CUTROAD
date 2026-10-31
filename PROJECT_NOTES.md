@@ -20,6 +20,8 @@
 - [x] 5. 맥 빌드 서버에서 빌드 · 시험 통과 (build=ok · smoke=ok, 34/34)
 - [x] 6. 사용 가이드 이미지 · 내려받기 zip · v1.0.0 출시 (2026-10-31)
 - [ ] 7. 사용자 맥에서 확인 (자동 자막 권한 창 · 실제 영상)
+- [x] 8. 1.1 시안 확정: 사진 + 음악으로 영상 만들기 (스타일 7 · 효과 모음) — 2026-10-31
+- [x] 9. 1.1.0 맥 시험 통과(41/41) · 출시 (2026-10-31)
 
 ## 구조
 
@@ -31,6 +33,7 @@ app/shell/Media.swift     파일 정보(probe) · 썸네일 · 파형 (cache/wav
 app/shell/Render.swift    프로젝트 → AVMutableComposition + 직접 만든 Compositor(방향 · 회전 · 맞춤 · 블러 · 페이드 · 트랜지션 · 글자)
 app/shell/Export.swift    MP4(H.264+AAC, AVAssetWriter) · GIF(ImageIO) · 컷 편집만(Passthrough, 안 되면 다시 인코딩) · 작업 목록(Jobs)
 app/shell/Captions.swift  자동 자막: 영상 소리만 m4a 로 → SFSpeechRecognizer → 줄 나누기
+app/shell/Photos.swift   사진 폴더 읽기 · 사진 정보/미리보기 JPG(cache/img) · 음악 박자 찾기(Accelerate FFT, cache/beats)
 app/shell/TestTools.swift 시험용 명령 (--test-sample · --test-export · --test-frame …)
 engine/                   Go 엔진: main.go(경로 · 설정 · 프로젝트 · /api/media) · projects.go · update.go · supervise.go · diag.go
 engine/web/               화면: index.html · css/app.css · js/{util,model,player,timeline,panels,dialogs,main}.js · fonts/
@@ -57,6 +60,20 @@ docs/                     guide.html → CUTROAD_사용가이드.png
 - 엔진 주소 47931 (MSROAD 47917 과 겹치지 않게).
 
 ## 작업 기록
+- 2026-10-31 v1.1.0 사진 + 음악으로 영상 만들기 (사용자 요청, 시안 확정 후):
+  · 사진: 폴더(하위 포함, 2000장까지) → probe 로 크기(방향 반영) · 찍은 날짜(EXIF) · 1600px 미리보기 JPG · 200px 작은 그림.
+    사진 클립 = media.kind 'image', 클립 길이 = out − in. 내보낼 때는 64→320×180 검은 '바탕 영상'(cache/base-v2.mov)을 트랙에 깔고
+    Compositor 가 사진 파일을 직접 그려요 (Builder.baseAsset 을 붙잡아 둬야 함: 놓치면 insertTimeRange -12780).
+  · 박자: 스펙트럼 변화량 → 자기상관(120 BPM 쪽 가중치) → 90 BPM 아래로 잡히면 두 배 확인 → 박자 위치 · 강박 · 박자별 크기 · 절정.
+    배경음악 항목(a.beats)에 음악 기준 시각으로 저장, CR.timelineBeats() 가 타임라인 시각으로 바꿔요(음악을 옮겨도 맞게).
+  · 자동 배치 CR.arrange: 분위기별 기본 박자 수(잔잔 8 · 보통 4 · 신나게 2) × 소리 크기(크면 ½, 작으면 ×2) → 박자 칸에 반올림.
+    넘기기는 박자 경계 가운데에 오도록 클립 길이 = 칸 + 앞뒤 넘기기/2.
+  · 효과(미리보기 CSS = 내보내기 Core Image 같은 값): 움직임 8(CR.motion/Effects.motion), 색감 8(CSS filter 행렬 그대로),
+    넘기기 10(dissolve fadeblack flash wipe slide circle zoom spin blur blinds), 박자 효과 3(펄스 · 번쩍 · 흔들림),
+    흐린 배경(bgBlur) · 흰 액자(photoFrame) · 오른쪽 아래 글자(pos 'br').
+  · 미리보기 구조: stage > fx(박자) > slot(넘기기) > look(블러 · 색감 · 페이드) > [bgfill, video/img, vign].
+  · 화면: 만들기 창(CR.openAutoMake), 만든 뒤 안내 줄(효과 다시 섞기 · 다시 만들기), 타임라인 '박자' 줄 · 끝 끌면 박자에 붙음,
+    속성: 사진 보이는 시간(2·4·8박) · 움직임 · 색감 · '모든 클립에', 프로젝트: 흐린 배경 · 액자 · 박자 효과.
 - 2026-10-31 v1.0.0 출시. 맥 빌드 서버 시험 34개 통과: 파일 정보 · 파형 · 썸네일, 1080p/세로/GIF/컷 편집(원본 그대로) 내보내기,
   결과 길이(트랜지션 겹침 계산) · 글자 · 디졸브 · 블러 장면 그림 확인, Dock 앱 켜기/끄기/고장 재시작/업데이트 뒤 다시 열기.
   앱 크기 13MB. 알게 된 것: 맥 ImageIO 는 GIF 머리를 'GIF87a'로 적음(정상), 맥 파일 이름은 한글이 NFD 라 시험에서 NFC 로 비교.
