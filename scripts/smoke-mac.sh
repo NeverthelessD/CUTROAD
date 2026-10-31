@@ -116,6 +116,63 @@ check "X8 컷 편집만: 원래 화질 그대로 저장 (5초, 결과 ${DQ:-?}�
 check "X9 컷 편집만: 다시 인코딩하지 않음" grep -q '원본 그대로' "$OUT/export-quick.json"
 ls -la "$M/out" > "$OUT/out-files.txt"
 
+echo "▶ S. 사진 + 음악 (1.1)"
+PH="$M/사진들"; rm -rf "$PH"; mkdir -p "$PH/여름"
+"$BIN" --test-photos "$PH" 7 > /dev/null 2>&1
+"$BIN" --test-photos "$PH/여름" 3 > /dev/null 2>&1
+"$BIN" --test-scan "$PH" > "$OUT/scan.json"; cat "$OUT/scan.json"
+check "S1 폴더의 사진 읽기 (하위 폴더 포함 10장 · 미리보기 · 세로 사진)" python3 -c "import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d['count']==10 and d['ok']==10 and d['portrait']>=3 else 1)" "$OUT/scan.json"
+"$BIN" --test-clicks "$M/박자120.wav" 120 40 > /dev/null 2>&1
+"$BIN" --test-beats "$M/박자120.wav" > "$OUT/beats120.json"; cat "$OUT/beats120.json"
+check "S2 박자 찾기: 120 BPM 시험 음악" python3 -c "import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if abs(d['bpm']-120)<=2 and d['beats']>=70 else 1)" "$OUT/beats120.json"
+"$BIN" --test-clicks "$M/박자92.wav" 92 40 > /dev/null 2>&1
+"$BIN" --test-beats "$M/박자92.wav" > "$OUT/beats92.json"; cat "$OUT/beats92.json"
+check "S3 박자 찾기: 92 BPM 시험 음악" python3 -c "import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if abs(d['bpm']-92)<=2 else 1)" "$OUT/beats92.json"
+python3 - "$M" "$PH" > "$M/spec-photo.json" <<'PY'
+import json, os, sys
+m, ph = sys.argv[1], sys.argv[2]
+files = sorted([os.path.join(ph, f) for f in os.listdir(ph) if f.lower().endswith((".jpg", ".png"))])[:7] + sorted([os.path.join(ph, "여름", f) for f in os.listdir(os.path.join(ph, "여름"))])[:3]
+T = ["dissolve", "fadeblack", "flash", "wipe", "slide", "circle", "zoom", "spin", "blur", "blinds"]
+F = ["warm", "cool", "vivid", "mono", "vintage", "film", "faded", "none", "warm", "film"]
+Mo = ["zoomIn", "zoomOut", "panL", "panR", "up", "down", "tilt", "none", "zoomIn", "panL"]
+clips = []
+for i, f in enumerate(files):
+    port = i % 3 == 2
+    clips.append({"path": f, "kind": "image", "w": 600 if port else 1200, "h": 900 if port else 800, "in": 0, "out": 2.5,
+                  "motion": Mo[i], "filter": F[i], "fadeIn": 0.5 if i == 0 else 0, "fadeOut": 0.8 if i == 9 else 0,
+                  "trans": {"type": T[i], "dur": 0.5} if i < 9 else None})
+beats = [round(0.25 + k * 0.5, 3) for k in range(42)]
+print(json.dumps({"clips": clips, "audio": [{"path": m + "/박자120.wav", "start": 0, "in": 0, "out": 20.5, "volume": 0.8, "fadeIn": 0, "fadeOut": 1.5}],
+  "texts": [{"text": "여름 휴가 2026", "start": 0, "end": 2.2, "pos": "center", "size": "l", "box": False},
+            {"text": "2026. 8. 3.", "start": 2.2, "end": 4.5, "pos": "br", "size": "s", "box": False}],
+  "aspect": "16:9", "fit": "fit", "bgBlur": True, "photoFrame": True,
+  "beatFx": {"pulse": True, "flash": True, "shake": True, "beats": beats, "flashes": beats[::4], "climax": [[8, 14]]},
+  "out": {"preset": "hd", "dir": m + "/out", "name": "사진 영상"}}, ensure_ascii=False))
+PY
+"$BIN" --test-export "$M/spec-photo.json" > "$OUT/export-photo.json" 2>&1; E5=$?; cat "$OUT/export-photo.json"
+DP=$(dur_of "$M/out/사진 영상.mp4")
+check "S4 사진 10장 + 효과(움직임 · 색감 · 넘기기 10가지 · 박자 효과 · 액자 · 흐린 배경)로 MP4 (20.5초, 결과 ${DP:-?}초)" bash -c "test $E5 = 0 && python3 -c 'import sys; sys.exit(0 if abs(float(\"${DP:-0}\")-20.5)<0.2 else 1)'"
+for T in 0.3 1.2 2.25 4.25 6.25 8.25 10.25 12.25 14.25 16.25 18.25 19.9; do
+  "$BIN" --test-frame "$M/out/사진 영상.mp4" "$T" "$OUT/photo-$T.png" 2>/dev/null
+done
+check "S5 결과 장면 그림 12장" bash -c "ls '$OUT'/photo-*.png | wc -l | grep -q 12"
+python3 - "$M/spec-photo.json" > "$M/spec-photo-q.json" <<'PY'
+import json, sys
+s = json.load(open(sys.argv[1])); s["out"].update({"preset": "quick", "name": "사진 컷"})
+for c in s["clips"]: c.update({"motion": "none", "filter": "none", "trans": None})
+s["audio"] = []; s["texts"] = []; s.pop("beatFx", None)
+print(json.dumps(s, ensure_ascii=False))
+PY
+"$BIN" --test-export "$M/spec-photo-q.json" > "$OUT/export-photo-q.json" 2>&1; E6=$?; cat "$OUT/export-photo-q.json"
+check "S6 컷 편집만 저장에 사진이 섞여도 MP4로 (다시 인코딩)" bash -c "test $E6 = 0 && grep -q '다시 인코딩' '$OUT/export-photo-q.json'"
+python3 - "$M/spec-photo.json" > "$M/spec-photo-g.json" <<'PY'
+import json, sys
+s = json.load(open(sys.argv[1])); s["out"].update({"preset": "gif", "name": "사진 움짤", "range": [1.5, 4.5]}); print(json.dumps(s, ensure_ascii=False))
+PY
+"$BIN" --test-export "$M/spec-photo-g.json" > "$OUT/export-photo-g.json" 2>&1; E7=$?
+check "S7 사진 영상 움짤" test "$E7" = "0"
+cp "$M"/out/사진*.gif "$OUT/" 2>/dev/null
+
 echo "▶ A. 켜기 · 화면"
 mkdir -p "$SUP/projects"
 python3 - "$M" "$SUP/projects/smoketest01.json" <<'PY'

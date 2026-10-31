@@ -411,3 +411,232 @@ CR.openSettings = function (tab) {
   draw();
   close = CR.modal(dlg, { onClose: () => clearTimeout(timer) });
 };
+
+// ---------------------------------------------------------------- 사진 + 음악으로 영상 만들기 (1.1)
+
+CR.openAutoMake = function (prev) {
+  const S0 = prev && CR.STYLES[prev.style] ? prev.style : 'vlog';
+  const st = {
+    folder: prev ? prev.folder : '', folderName: prev ? prev.folderName : '', photos: [], scanning: '',
+    music: null, ana: null, wave: null, musicLoading: '',
+    style: S0, motions: [], trans: [], color: 'none', beat: [],
+    bgBlur: true, frame: false, mood: 'normal', order: 'date', length: 'music', aspect: '16:9',
+    titleOn: true, title: '', dates: false, error: '', busy: false, titleEdited: !!prev,
+  };
+  const applyStyle = (k) => {
+    st.style = k;
+    let p = CR.STYLES[k];
+    if (k === 'auto') p = CR.STYLES[CR.autoStyle(st.ana)];
+    st.motions = p.motions.slice(); st.trans = p.trans.slice(); st.color = p.color; st.beat = p.beat.slice();
+    if (p.mood) st.mood = p.mood;
+    st.custom = false;
+  };
+  applyStyle(S0);
+  if (prev) {
+    ['motions', 'trans', 'color', 'beat', 'mood', 'order', 'length'].forEach((k) => { if (prev[k] !== undefined) st[k] = Array.isArray(prev[k]) ? prev[k].slice() : prev[k]; });
+    if (CR.P) { st.aspect = CR.P.aspect; st.bgBlur = CR.P.bgBlur; st.frame = CR.P.photoFrame; const t = CR.P.texts.find((x) => x.kind === 'title'); st.titleOn = !!t; st.title = t ? t.text : st.folderName; st.dates = CR.P.texts.some((x) => x.pos === 'br'); }
+  }
+  let close;
+  const dlg = h('div', { class: 'dlg automake', style: { width: '960px' } });
+
+  const loadFolder = async (dir) => {
+    st.folder = dir; st.folderName = dir.split('/').filter(Boolean).pop() || dir;
+    if (!st.title || !st.titleEdited) st.title = st.folderName;
+    st.photos = []; st.scanning = '사진을 찾는 중…'; st.error = ''; draw();
+    try {
+      const r = await CR.native('scanPhotos', { path: dir, recursive: true });
+      const paths = r.paths || [];
+      if (!paths.length) { st.scanning = ''; st.error = '이 폴더에는 사진(JPG · PNG · HEIC)이 없어요'; draw(); return; }
+      st.scanning = '사진 ' + paths.length + '장을 읽는 중…'; draw();
+      const p = await CR.native('probe', { paths });
+      st.photos = (p.items || []).filter((x) => !x.error && x.kind === 'image');
+      const bad = paths.length - st.photos.length;
+      st.scanning = '';
+      if (bad) CR.toast('읽을 수 없는 사진 ' + bad + '장은 뺐어요', { bad: true });
+      const portrait = st.photos.filter((x) => x.height > x.width).length;
+      if (!prev && portrait > st.photos.length * 0.6) st.aspect = '9:16';
+    } catch (e) { st.scanning = ''; st.error = e.message; }
+    draw();
+  };
+  const loadMusic = async (path) => {
+    st.music = null; st.ana = null; st.wave = null; st.musicLoading = '음악을 읽는 중…'; st.error = ''; draw();
+    try {
+      const p = await CR.native('probe', { paths: [path] });
+      const it = (p.items || [])[0];
+      if (!it || it.error || !it.hasAudio) throw new Error((it && it.error) || '소리가 없는 파일이에요');
+      st.music = it;
+      st.musicLoading = '박자를 찾는 중…'; draw();
+      const [ana, wave] = await Promise.all([CR.native('beats', { path }), CR.native('waveform', { path }).catch(() => null)]);
+      if (ana.error) throw new Error(ana.error);
+      if (it.duration && ana.duration > it.duration) ana.duration = it.duration;
+      st.ana = ana; st.wave = wave;
+      CR.cache.waves[path] = wave || { peaks: [] };
+      if (st.style === 'auto') applyStyle('auto');
+    } catch (e) { st.music = null; st.error = e.message; }
+    st.musicLoading = '';
+    draw();
+  };
+
+  const plan = () => (st.photos.length && st.ana ? CR.arrange(st.photos.length, st.ana, { mood: st.mood, length: st.length }) : null);
+
+  const drawWave = (cv, A) => {
+    const W = cv.parentNode.clientWidth || 420, H = 40;
+    const dpr = Math.min(2, devicePixelRatio || 1);
+    cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    const g = cv.getContext('2d'); g.scale(dpr, dpr);
+    const css = getComputedStyle(document.documentElement);
+    const dur = st.ana.duration || 1;
+    const pk = (st.wave && st.wave.peaks) || [], per = (st.wave && st.wave.perSec) || 50;
+    g.strokeStyle = css.getPropertyValue('--bWave').trim(); g.lineWidth = 1.6; g.beginPath();
+    for (let x = 2; x < W - 1; x += 3) {
+      const a = Math.floor(x / W * dur * per), b = Math.max(a + 1, Math.floor((x + 3) / W * dur * per));
+      let v = 0; for (let k = a; k < b && k < pk.length; k++) v = Math.max(v, pk[k]);
+      const y = Math.max(0.6, Math.min(1, Math.pow(v, 0.7)) * 15);
+      g.moveTo(x, 20 - y); g.lineTo(x, 20 + y);
+    }
+    g.stroke();
+    if (A) {
+      g.fillStyle = css.getPropertyValue('--accent').trim();
+      A.bounds.slice(1, -1).forEach((b) => g.fillRect(Math.round(b / dur * W) - 1, 0, 2, H));
+      if (A.end < dur - 0.2) { g.fillStyle = 'rgba(0,0,0,.45)'; g.fillRect(A.end / dur * W, 0, W, H); }
+    }
+  };
+
+  const chips = (list, sel, multi, onchange) => h('div', { class: 'chips2' }, list.map(([k, label]) => {
+    const on = multi ? sel.includes(k) : sel === k;
+    return h('button', { class: on ? 'on' : '', onclick: () => {
+      if (multi) { const i = sel.indexOf(k); if (i >= 0) sel.splice(i, 1); else sel.push(k); } else onchange(k);
+      st.custom = true; draw();
+    } }, label);
+  }));
+  const seg = (opts, val, on) => h('div', { class: 'seg wide' }, opts.map(([k, label]) => h('button', { class: k === val ? 'on' : '', onclick: () => { on(k); draw(); } }, label)));
+  const check = (val, label, on) => { const cb = h('input', { type: 'checkbox', checked: val }); cb.addEventListener('change', () => { on(cb.checked); draw(); }); return h('label', { class: 'check' }, cb, label); };
+
+  const draw = () => {
+    dlg.innerHTML = '';
+    const A = plan();
+    dlg.appendChild(h('div', { class: 'dh' },
+      h('div', { style: { display: 'flex', gap: '12px', alignItems: 'center' } },
+        h('div', { class: 'hic', style: { background: 'var(--accentSoft)', color: 'var(--accent)' } }, I('photo')),
+        h('div', null, h('h1', null, '사진으로 영상 만들기'), h('p', null, '사진 폴더와 음악을 고르면, 음악 박자에 맞춰 알아서 영상을 만들어요'))),
+      h('button', { class: 'close', 'aria-label': '닫기', onclick: () => close() }, I('x'))));
+    const body = h('div', { class: 'db', style: { gap: '12px' } });
+    dlg.appendChild(body);
+
+    // 1 사진 · 2 음악
+    const pics = st.photos.slice(0, 6).map((p) => h('div', { style: { backgroundImage: p.thumb ? 'url(' + p.thumb + ')' : '' } }));
+    if (st.photos.length > 6) pics.push(h('div', { class: 'more' }, '+' + (st.photos.length - 6)));
+    const cv = h('canvas');
+    CR.put(body, h('div', { class: 'cols' },
+      h('div', { class: 'card' },
+        h('div', { class: 'step' }, h('span', { class: 'no' }, '1'), h('b', null, '사진 폴더'), h('div', { class: 'grow' }),
+          h('button', { class: 'btn', style: { height: '28px', fontSize: '12px', maxWidth: '230px' }, disabled: !!st.scanning, onclick: async () => {
+            try { const r = await CR.native('chooseFolder', { start: st.folder, purpose: 'photos' }); if (r.path) loadFolder(r.path); } catch (e) { CR.toast(e.message, { bad: true }); }
+          } }, I('folder'), h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis' } }, st.folderName || '폴더 고르기…'))),
+        st.photos.length ? h('div', { class: 'thumbs' }, pics) : h('div', { class: 'empty' }, st.scanning || '사진이 들어 있는 폴더를 골라 주세요'),
+        h('span', { class: 'info' }, st.photos.length ? [h('b', null, st.photos.length + '장'), ' · JPG · PNG · HEIC · 하위 폴더 포함'] : '')),
+      h('div', { class: 'card' },
+        h('div', { class: 'step' }, h('span', { class: 'no' }, '2'), h('b', null, '배경음악'), h('div', { class: 'grow' }),
+          h('button', { class: 'btn', style: { height: '28px', fontSize: '12px', maxWidth: '230px' }, disabled: !!st.musicLoading, onclick: async () => {
+            try { const r = await CR.native('open', { kind: 'music' }); if (r.paths && r.paths[0]) loadMusic(r.paths[0]); } catch (e) { CR.toast(e.message, { bad: true }); }
+          } }, I('music'), h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis' } }, st.music ? st.music.name : '음악 고르기…'))),
+        st.ana ? h('div', { class: 'wavebox' }, cv) : h('div', { class: 'empty' }, st.musicLoading || 'MP3 · WAV · M4A'),
+        h('span', { class: 'info' }, st.ana ? [h('b', null, CR.short(st.ana.duration)), ' · 박자 ', h('b', null, Math.round(st.ana.bpm) + ' BPM'),
+          st.ana.guessed ? ' (박자가 뚜렷하지 않아 고르게 나눠요)' : '', A ? [' · ', h('span', { style: { color: 'var(--accent)' } }, '|'), ' 사진이 바뀌는 곳'] : ''] : '')),
+    ));
+    if (st.ana) requestAnimationFrame(() => drawWave(cv, A));
+
+    // 3 스타일
+    CR.put(body, h('div', { class: 'step' }, h('span', { class: 'no' }, '3'), h('b', { style: { fontSize: '14px' } }, '스타일'),
+      h('span', { style: { fontSize: '12px', color: 'var(--dim)' } }, '고르면 아래 효과가 알맞게 정해져요. 사진마다 효과를 골고루 섞어 써요')),
+    h('div', { class: 'styles' }, Object.keys(CR.STYLES).map((k) => {
+      const p = CR.STYLES[k];
+      const ph = st.photos[(Object.keys(CR.STYLES).indexOf(k) * 3) % Math.max(1, st.photos.length)];
+      const look = k === 'auto' ? 'hue-rotate(40deg) saturate(1.2)' : CR.cssFilter(p.color) || 'none';
+      return h('button', { class: 'style' + (st.style === k && !st.custom ? ' on' : st.style === k ? ' on' : ''), onclick: () => { applyStyle(k); draw(); } },
+        h('span', { class: 'pic', style: { backgroundImage: ph && ph.thumb ? 'url(' + ph.thumb + ')' : '', filter: look } },
+          p.color === 'film' ? h('span', { style: { background: 'radial-gradient(circle farthest-corner, transparent 45%, rgba(0,0,0,.6))' } }) : null),
+        h('b', null, p.name), h('small', null, p.desc));
+    })));
+
+    // 효과 자세히
+    CR.put(body, h('div', { class: 'fxbox' },
+      h('div', { style: { display: 'flex', justifyContent: 'space-between' } },
+        h('span', { style: { fontSize: '12px', fontWeight: 600, color: 'var(--sub)' } }, '효과 자세히 고르기 ', h('span', { style: { fontWeight: 400, color: 'var(--dim)' } }, '· 여러 개 고르면 사진마다 번갈아 써요')),
+        h('span', { style: { fontSize: '11px', color: 'var(--dim)' } }, st.custom ? '직접 고른 효과' : '‘' + CR.STYLES[st.style].name + '’ 기본값')),
+      h('div', { class: 'fxrow' }, h('span', null, '움직임'), chips(CR.MOTIONS.filter((x) => x[0] !== 'none'), st.motions, true)),
+      h('div', { class: 'fxrow' }, h('span', null, '넘기기'), chips(CR.TRANS, st.trans, true)),
+      h('div', { class: 'fxrow' }, h('span', null, '색감'), chips(CR.FILTER_NAMES, st.color, false, (k) => { st.color = k; })),
+      h('div', { class: 'fxrow' }, h('span', null, '박자 효과'), chips(CR.BEATFX, st.beat, true)),
+      h('div', { style: { display: 'flex', gap: '20px', paddingTop: '2px' } },
+        check(st.bgBlur, '세로 사진은 뒤를 흐린 배경으로 채우기', (v) => { st.bgBlur = v; }),
+        check(st.frame, '사진 테두리 (흰 액자)', (v) => { st.frame = v; }))));
+
+    // 빠르기 · 순서 · 길이 · 비율
+    CR.put(body, h('div', { class: 'opts4' },
+      h('div', { class: 'field' }, h('span', { class: 'lab2' }, '분위기 (빠르기)'), seg([['calm', '잔잔하게'], ['normal', '보통'], ['upbeat', '신나게']], st.mood, (v) => { st.mood = v; })),
+      h('div', { class: 'field' }, h('span', { class: 'lab2' }, '사진 순서'), seg([['date', '찍은 날짜'], ['name', '파일 이름'], ['random', '무작위']], st.order, (v) => { st.order = v; })),
+      h('div', { class: 'field' }, h('span', { class: 'lab2' }, '영상 길이'), seg([['music', '음악 전체'], ['photos', '사진 수에 맞춰']], st.length, (v) => { st.length = v; })),
+      h('div', { class: 'field' }, h('span', { class: 'lab2' }, '화면 비율'), seg([['16:9', '16:9'], ['9:16', '9:16'], ['1:1', '1:1']], st.aspect, (v) => { st.aspect = v; }))));
+
+    const tIn = h('input', { class: 'tin', type: 'text', value: st.title, 'aria-label': '제목', style: { height: '30px', flex: 1, minWidth: 0 } });
+    tIn.addEventListener('input', () => { st.title = tIn.value; st.titleEdited = true; });
+    tIn.addEventListener('keydown', (e) => e.stopPropagation());
+    const tcb = h('input', { type: 'checkbox', checked: st.titleOn });
+    tcb.addEventListener('change', () => { st.titleOn = tcb.checked; });
+    CR.put(body, h('div', { style: { display: 'flex', gap: '14px', alignItems: 'center' } },
+      h('label', { class: 'check', style: { flex: 1 } }, tcb, h('span', { style: { whiteSpace: 'nowrap' } }, '첫 화면 제목'), tIn),
+      check(st.dates, '사진 찍은 날짜를 작게 넣기', (v) => { st.dates = v; })));
+
+    if (A) {
+      const avg = A.end / st.photos.length;
+      const nb = A.beatLen ? avg / A.beatLen : 0;
+      const lo = Math.max(1, Math.round(nb / 2)), hi = Math.max(lo, Math.round(nb * 1.5));
+      CR.put(body, h('div', { class: 'facts' },
+        h('div', null, h('small', null, '영상 길이'), h('b', null, CR.short(A.end))),
+        h('div', null, h('small', null, '사진 한 장'), h('b', null, '평균 ' + CR.round(avg, 1) + '초 · ' + (lo === hi ? lo : lo + '~' + hi) + '박자')),
+        h('div', null, h('small', null, '효과'), h('b', null, '움직임 ' + st.motions.length + ' · 넘기기 ' + st.trans.length + ' · 박자 ' + st.beat.length)),
+        h('div', null, h('small', null, '끝부분'), h('b', null, A.end < st.ana.duration - 0.5 ? '음악 페이드 아웃' : '음악과 함께 끝'))));
+    }
+    if (st.error) CR.put(body, h('div', { class: 'errbox' }, st.error));
+
+    dlg.appendChild(h('div', { class: 'df' }, h('span', { class: 'note' }, '다 만든 뒤에도 사진 순서 · 길이 · 효과를 마음대로 고칠 수 있어요'),
+      h('div', { class: 'actions' },
+        h('button', { class: 'btn', onclick: () => close() }, '취소'),
+        h('button', { class: 'btn primary', disabled: !A || st.busy, onclick: make }, I('sparkle'), prev ? '다시 만들기' : '영상 만들기'))));
+  };
+
+  const make = () => {
+    if (!st.photos.length || !st.ana) return;
+    st.busy = true;
+    const res = CR.buildAuto(Object.assign({}, st, { seed: Math.floor(Math.random() * 1e9) }));
+    const np = CR.normalize(res.P);
+    const info = { n: st.photos.length, music: st.music.name, bpm: st.ana.bpm, total: res.A.end, trans: res.trans.filter((x) => x > 0).length, note: res.A.note, end: res.A.end };
+    close();
+    if (prev && CR.P) {
+      CR.edit('사진 영상 다시 만들기', () => {
+        const id = CR.P.id;
+        Object.keys(CR.P).forEach((k) => { delete CR.P[k]; });
+        Object.assign(CR.P, np, { id });
+      });
+    } else {
+      CR.save.now();
+      CR.P = np;
+      CR.hist = { undo: [], redo: [] };
+      CR.S.sel = null; CR.S.t = 0; CR.S.zoomFit = true;
+      CR.go('editor');
+      CR.saveNow();
+    }
+    CR.S.autoInfo = info;
+    CR.S.zoomFit = true;
+    CR.P.media.forEach((m) => CR.loadAssets(m));
+    CR.render('all');
+  };
+
+  draw();
+  close = CR.modal(dlg);
+  if (prev) {
+    if (prev.folder) loadFolder(prev.folder);
+    if (prev.music) loadMusic(prev.music);
+  }
+};

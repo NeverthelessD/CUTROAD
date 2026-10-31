@@ -30,6 +30,7 @@ window.cutroadMenu = function (id) {
     case 'import': if (CR.S.view === 'home') CR.startNew(); CR.pickImport(); break;
     case 'export': if (CR.P) CR.openExport(); break;
     case 'settings': CR.openSettings(); break;
+    case 'automake': CR.openAutoMake(); break;
     case 'shortcuts': CR.openSettings('keys'); break;
     case 'mode-full': if (CR.P) CR.setMode('full'); break;
     case 'mode-quick': if (CR.P) CR.setMode('quick'); break;
@@ -47,6 +48,7 @@ addEventListener('keydown', (e) => {
   const stop = () => { e.preventDefault(); e.stopPropagation(); };
   if (CR.S.view === 'home') {
     if (!native && cmd && k === 'n') { stop(); CR.startNew(); }
+    if (!native && cmd && k === 'N') { stop(); CR.openAutoMake(); }
     return;
   }
   if (!CR.P) return;
@@ -110,6 +112,10 @@ if (!CR.hasNative) {
   CR.mock = {
     probe: async (m) => ({ items: m.paths.map((p, i) => {
       const name = p.split('/').pop(); const ext = name.split('.').pop().toLowerCase();
+      if (['jpg', 'jpeg', 'png', 'heic'].includes(ext)) {
+        const port = i % 3 === 2;
+        return { path: p, name, kind: 'image', duration: 3600, hasAudio: false, width: port ? 600 : 1200, height: port ? 900 : 800, preview: p, taken: Date.UTC(2026, 7, 1 + i), thumb: '' };
+      }
       const dur = (window.CR_MOCK_DUR && window.CR_MOCK_DUR[name]) || 12 + (name.length % 7) * 4;
       if (!['mov', 'mp4', 'mp3', 'wav', 'm4a'].includes(ext)) return { path: p, name, error: '지원하지 않는 파일이에요' };
       const video = ext === 'mov' || ext === 'mp4';
@@ -117,8 +123,14 @@ if (!CR.hasNative) {
     }) }),
     thumbs: async () => ({ frames: [], interval: 0 }),
     waveform: async (m) => ({ perSec: 50, peaks: fakePeaks(m.path.length, 3000) }),
-    open: async () => ({ paths: (prompt('가져올 파일 경로 (쉼표로 구분)', '/tmp/바다.mov') || '').split(',').map((s) => s.trim()).filter(Boolean) }),
-    chooseFolder: async () => ({ path: '' }),
+    open: async (m) => (m.kind === 'music' && window.CR_MOCK_MUSIC ? { paths: [window.CR_MOCK_MUSIC] } : { paths: (prompt('가져올 파일 경로 (쉼표로 구분)', '/tmp/바다.mov') || '').split(',').map((s) => s.trim()).filter(Boolean) }),
+    chooseFolder: async (m) => ({ path: m.purpose === 'photos' ? (window.CR_MOCK_FOLDER || '') : '' }),
+    scanPhotos: async () => ({ paths: window.CR_MOCK_PHOTOS || [] }),
+    beats: async () => {
+      const bpm = 112, p = 60 / bpm, d = 60, beats = [], energy = [];
+      for (let t = 0.25; t < d; t += p) { beats.push(+t.toFixed(3)); energy.push(t > 24 && t < 40 ? 0.95 : 0.55); }
+      return { bpm, beats, downbeats: beats.filter((_, i) => i % 4 === 0), energy, climax: [[24.1, 40]], duration: d };
+    },
     title: async () => ({ ok: true }),
     speechStatus: async () => ({ status: 'authorized' }),
     export: async () => ({ id: 'x' }),

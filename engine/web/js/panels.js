@@ -33,7 +33,8 @@ CR.go = function (view) {
     CR.V.media = h('div', { class: 'media' });
     CR.V.inspector = h('div', { class: 'inspector' });
     CR.V.tl = h('div', { class: 'tl' });
-    CR.put(v, CR.V.toolbar, h('div', { class: 'middle' }, CR.V.media, CR.V.preview, CR.V.inspector), CR.V.tl, CR.V.status);
+    CR.V.banner = h('div');
+    CR.put(v, CR.V.toolbar, h('div', { class: 'middle' }, CR.V.media, CR.V.preview, CR.V.inspector), CR.V.banner, CR.V.tl, CR.V.status);
   }
   app.appendChild(v);
   CR.render('all');
@@ -56,6 +57,7 @@ CR.render = function (part) {
   }
   if (!quick && (part === 'all' || part === 'media' || part === 'select')) CR.renderMedia();
   if (!quick && (part === 'all' || part === 'select')) CR.renderInspector();
+  if (!quick && part === 'all') CR.renderBanner();
   if (quick && (part === 'all' || part === 'select' || part === 'timeline' || part === 'media')) CR.renderQuick();
   if (!quick && (part === 'all' || part === 'select' || part === 'timeline' || part === 'media')) CR.renderTimeline(CR.V.tl);
   CR.status();
@@ -212,6 +214,23 @@ CR.sizeStage = function () {
 // ---------------------------------------------------------------- 미디어 (왼쪽)
 
 CR.S.mtab = 'video';
+/** 사진으로 영상을 만든 직후 보여 주는 안내 줄 */
+CR.renderBanner = function () {
+  const b = CR.V.banner;
+  if (!b) return;
+  b.innerHTML = '';
+  const info = CR.S.autoInfo;
+  if (!info || !CR.P || !CR.P.auto) return;
+  const note = { short: ' · 사진이 적어서 음악을 ' + CR.short(info.end) + '에서 줄였어요', many: ' · 사진이 많아서 아주 빠르게 넘어가요', fit: ' · 사진이 많아서 음악 전체에 맞췄어요' }[info.note] || '';
+  CR.put(b, h('div', { class: 'autobanner' }, I('check'),
+    h('b', null, '사진 ' + info.n + '장을 ‘' + info.music + '’ 박자에 맞춰 놓았어요'),
+    h('span', { class: 'sub' }, '· ' + CR.short(info.total) + ' · ' + (info.bpm ? Math.round(info.bpm) + ' BPM · ' : '') + '넘기기 ' + info.trans + '곳' + note),
+    h('div', { class: 'grow' }),
+    h('button', { class: 'btn', style: { height: '30px' }, onclick: () => CR.reshuffle() }, I('refresh'), '효과 다시 섞기'),
+    h('button', { class: 'btn', style: { height: '30px' }, onclick: () => CR.openAutoMake(CR.P.auto) }, I('gear'), '설정 바꿔서 다시 만들기'),
+    h('button', { class: 'btn icon ghost', style: { height: '30px', width: '30px' }, 'aria-label': '안내 닫기', onclick: () => { CR.S.autoInfo = null; CR.renderBanner(); } }, I('x'))));
+};
+
 CR.renderMedia = function () {
   const box = CR.V.media;
   if (!box) return;
@@ -219,11 +238,11 @@ CR.renderMedia = function () {
   const top = keep ? keep.scrollTop : 0;
   box.innerHTML = '';
   const P = CR.P;
-  const vids = P.media.filter((m) => m.kind === 'video'), auds = P.media.filter((m) => m.kind === 'audio');
+  const vids = P.media.filter((m) => m.kind === 'video' || m.kind === 'image'), auds = P.media.filter((m) => m.kind === 'audio');
   const tab = CR.S.mtab;
   CR.put(box, h('div', { class: 'head' }, h('b', null, '미디어'), h('span', { style: { fontSize: '12px', color: 'var(--dim)' } }, P.media.length + '개')),
     h('div', { class: 'tabs' },
-      [['video', '영상'], ['audio', '오디오'], ['text', '텍스트']].map(([k, label]) =>
+      [['video', '영상 · 사진'], ['audio', '오디오'], ['text', '텍스트']].map(([k, label]) =>
         h('button', { class: tab === k ? 'on' : '', onclick: () => { CR.S.mtab = k; CR.renderMedia(); } }, label))));
   const list = h('div', { class: 'list' });
   box.appendChild(list);
@@ -249,12 +268,12 @@ CR.renderMedia = function () {
       const it = h('div', { class: 'mitem' + (m.kind === 'audio' ? ' audio' : '') + (m.missing ? ' missing' : ''), title: m.path + (m.missing ? '\n(파일을 찾을 수 없어요)' : '') },
         h('div', { class: 'th', style: img ? { backgroundImage: 'url(' + img + ')' } : {} },
           m.kind === 'audio' ? I('wave') : null,
-          h('span', { class: 'dur' }, CR.short(m.duration)),
+          h('span', { class: 'dur' }, m.kind === 'image' ? '사진' : CR.short(m.duration)),
           h('button', { class: 'add', title: '타임라인에 넣기', 'aria-label': '타임라인에 넣기', onclick: (e) => {
             e.stopPropagation();
             if (m.missing) return CR.toast('파일을 찾을 수 없어요: ' + m.name, { bad: true });
             CR.edit('타임라인에 넣기', () => {
-              if (m.kind === 'video') { const c = CR.appendClip(m); CR.S.sel = { type: 'clip', id: c.id }; }
+              if (m.kind !== 'audio') { const c = CR.appendClip(m); CR.S.sel = { type: 'clip', id: c.id }; }
               else { const a = CR.addBGM(m, CR.S.t); CR.S.sel = { type: 'audio', id: a.id }; }
             });
           } }, I('plus'))),
@@ -338,26 +357,49 @@ CR.renderInspector = function () {
   else CR.inspectProject(body);
 };
 
+function fxGrid(list, value, onpick) {
+  return h('div', { class: 'fxgrid' }, list.map(([k, label]) => h('button', { class: k === value ? 'on' : '', onclick: () => onpick(k) }, label)));
+}
+
 CR.inspectClip = function (body, c) {
   const m = CR.media(c.mediaId);
+  const isImg = m && m.kind === 'image';
   const volV = h('span', { class: 'v' }, Math.round(c.volume * 100) + '%');
   const blurV = h('span', { class: 'v' }, String(c.blur));
-  CR.put(body, 
-    h('div', { class: 'ititle' }, h('b', null, m ? m.name : '?'), h('span', null, CR.shortD(c.in) + ' – ' + CR.shortD(c.out))),
-    h('div', { class: 'field' }, h('div', { class: 'lab' }, h('span', null, '볼륨'), volV),
-      slider({ label: '볼륨', min: 0, max: 100, value: Math.round(c.volume * 100), set: (v) => { c.volume = v / 100; }, show: (v) => { volV.textContent = v + '%'; } })),
-    field('페이드 (영상 + 소리)', null, h('div', { class: 'row' },
+  const TB = CR.timelineBeats();
+  let beatSeg = null;
+  if (isImg && TB.beats.length > 1) {
+    const g = TB.beats.slice(1).map((b, i) => b - TB.beats[i]).sort((x, y) => x - y);
+    const bl = g[g.length >> 1];
+    const cur = Math.round(CR.dur(c) / bl);
+    beatSeg = segPick([[2, '2박'], [4, '4박'], [8, '8박']], cur, (n) => CR.edit('보이는 시간', () => { c.out = CR.round(c.in + n * bl, 3); }));
+  }
+  const taken = isImg && m.taken ? new Date(m.taken) : null;
+  CR.put(body,
+    h('div', { class: 'ititle' }, h('b', null, m ? m.name : '?'),
+      h('span', null, isImg ? (taken ? (taken.getMonth() + 1) + '월 ' + taken.getDate() + '일' : '사진') : CR.shortD(c.in) + ' – ' + CR.shortD(c.out))),
+    isImg ? field('보이는 시간', null, h('div', { class: 'row' },
+      numBox('길이', CR.round(CR.dur(c), 2), '초', (v) => CR.edit('보이는 시간', () => { c.out = CR.round(c.in + Math.max(0.2, v), 3); }), { min: 0.2, max: 600 }))) : null,
+    beatSeg ? field('박자에 맞추기', null, beatSeg) : null,
+    !isImg ? h('div', { class: 'field' }, h('div', { class: 'lab' }, h('span', null, '볼륨'), volV),
+      slider({ label: '볼륨', min: 0, max: 100, value: Math.round(c.volume * 100), set: (v) => { c.volume = v / 100; }, show: (v) => { volV.textContent = v + '%'; } })) : null,
+    field(isImg ? '페이드' : '페이드 (영상 + 소리)', null, h('div', { class: 'row' },
       numBox('인', c.fadeIn, '초', (v) => CR.edit('페이드 인', () => { c.fadeIn = CR.round(Math.min(v, CR.dur(c)), 2); }), { max: 10 }),
       numBox('아웃', c.fadeOut, '초', (v) => CR.edit('페이드 아웃', () => { c.fadeOut = CR.round(Math.min(v, CR.dur(c)), 2); }), { max: 10 }))),
-    field('속도', null, segPick([[0.5, '0.5×'], [1, '1×'], [1.5, '1.5×'], [2, '2×']], c.speed, (v) => CR.edit('속도', () => { c.speed = v; }), 'mono')),
+    !isImg ? field('속도', null, segPick([[0.5, '0.5×'], [1, '1×'], [1.5, '1.5×'], [2, '2×']], c.speed, (v) => CR.edit('속도', () => { c.speed = v; }), 'mono')) : null,
+    field('움직임', null, fxGrid(CR.MOTIONS, c.motion, (v) => CR.edit('움직임', () => { c.motion = v; }))),
+    field('색감', null, fxGrid(CR.FILTER_NAMES, c.filter, (v) => CR.edit('색감', () => { c.filter = v; }))),
+    h('button', { class: 'btn ghost', style: { height: '28px', fontSize: '12px', alignSelf: 'flex-start' }, onclick: () => CR.edit('색감 모두', () => {
+      CR.kept().forEach((x) => { x.filter = c.filter; });
+    }) }, '이 색감을 모든 클립에'),
     h('div', { class: 'field' }, h('div', { class: 'lab' }, h('span', null, '블러'), blurV),
       slider({ label: '블러', min: 0, max: 40, value: c.blur, set: (v) => { c.blur = v; }, show: (v) => { blurV.textContent = String(v); } })),
     field('회전', c.rotate + '°', h('div', { class: 'row' },
       h('button', { class: 'btn', style: { flex: 1 }, onclick: () => CR.edit('회전', () => { c.rotate = (c.rotate + 270) % 360; }) }, I('rotL'), '왼쪽'),
       h('button', { class: 'btn', style: { flex: 1 }, onclick: () => CR.edit('회전', () => { c.rotate = (c.rotate + 90) % 360; }) }, I('rotR'), '오른쪽'))),
     h('div', { class: 'actions' },
-      h('button', { class: 'btn', onclick: () => CR.split() }, I('scissors'), '재생 위치에서 자르기'),
-      h('button', { class: 'btn danger', onclick: () => CR.deleteSel() }, I('trash'), '지우기')),
+      !isImg ? h('button', { class: 'btn', onclick: () => CR.split() }, I('scissors'), '재생 위치에서 자르기') : null,
+      h('button', { class: 'btn danger', onclick: () => CR.deleteSel() }, I('trash'), isImg ? '빼기' : '지우기')),
     m && m.missing ? h('div', { class: 'errbox' }, '원본 파일을 찾을 수 없어요. 옮기거나 이름을 바꿨다면 원래 자리에 되돌려 주세요.') : null);
 };
 
@@ -368,12 +410,13 @@ CR.inspectTrans = function (body, c) {
   const nm = (x) => { const m = x && CR.media(x.mediaId); return m ? m.name.replace(/\.[^.]+$/, '') : '?'; };
   const cur = (c.trans && c.trans.type) || '';
   const durV = h('span', { class: 'v' }, ((c.trans && c.trans.dur) || 0.8).toFixed(1) + '초');
-  const kinds = [['dissolve', '디졸브', 'trans'], ['fadeblack', '검은 화면', 'film'], ['wipe', '와이프', 'fwd'], ['slide', '밀어내기', 'export'], ['', '없음', 'x']];
+  const kinds = CR.TRANS.concat([['', '없음']]);
   CR.put(body, 
     h('div', { class: 'ititle' }, h('b', null, nm(c) + ' → ' + nm(next))),
-    field('종류', null, h('div', { class: 'transGrid' }, kinds.map(([k, label, ic]) =>
-      h('button', { class: cur === k ? 'on' : '', onclick: () => { CR.setTrans(c.id, k, c.trans && c.trans.dur); if (k) CR.select('trans', c.id); else CR.select('clip', c.id); } },
-        I(ic), label)))),
+    field('종류', null, fxGrid(kinds, cur, (k) => { CR.setTrans(c.id, k, c.trans && c.trans.dur); if (k) CR.select('trans', c.id); else CR.select('clip', c.id); })),
+    cur && CR.P.auto ? h('button', { class: 'btn ghost', style: { height: '28px', fontSize: '12px', alignSelf: 'flex-start' }, onclick: () => CR.edit('넘기기 모두', () => {
+      CR.kept().forEach((x) => { if (x.trans) x.trans.type = cur; });
+    }) }, '모든 넘기기를 이걸로') : null,
     cur ? h('div', { class: 'field' }, h('div', { class: 'lab' }, h('span', null, '길이'), durV),
       slider({ label: '트랜지션 길이', min: 0.2, max: 2, step: 0.1, value: c.trans.dur, set: (v) => { c.trans.dur = v; }, show: (v) => { durV.textContent = v.toFixed(1) + '초'; } })) : null,
     h('p', { class: 'hint' }, '두 클립이 겹치면서 바뀌어요. 그만큼 전체 길이가 조금 짧아져요. 소리도 함께 자연스럽게 바뀌어요.'),
@@ -436,6 +479,11 @@ CR.inspectProject = function (body) {
     field('화면 비율', null, segPick([['16:9', '가로 16:9'], ['9:16', '세로 9:16'], ['1:1', '1:1']], P.aspect, (v) => CR.edit('화면 비율', () => { P.aspect = v; }))),
     field('화면 맞춤', null, segPick([['fit', '전체 보이기'], ['fill', '꽉 채우기']], P.fit, (v) => CR.edit('화면 맞춤', () => { P.fit = v; }))),
     h('p', { class: 'hint' }, '비율이 다른 영상은 ‘전체 보이기’면 검은 띠가 생기고, ‘꽉 채우기’면 가장자리가 잘려요.'),
+    P.media.some((m) => m.kind === 'image') ? field('사진', null,
+      h('label', { class: 'check' }, (() => { const cb = h('input', { type: 'checkbox', checked: P.bgBlur }); cb.addEventListener('change', () => CR.edit('흐린 배경', () => { P.bgBlur = cb.checked; })); return cb; })(), '빈 곳은 사진을 흐리게 채우기'),
+      h('label', { class: 'check' }, (() => { const cb = h('input', { type: 'checkbox', checked: P.photoFrame }); cb.addEventListener('change', () => CR.edit('흰 액자', () => { P.photoFrame = cb.checked; })); return cb; })(), '흰 액자 테두리')) : null,
+    CR.timelineBeats().beats.length ? field('박자 효과', null, h('div', { class: 'chips2' }, CR.BEATFX.map(([k, label]) =>
+      h('button', { class: P.beatFx[k] ? 'on' : '', onclick: () => CR.edit('박자 효과', () => { P.beatFx[k] = !P.beatFx[k]; }) }, label)))) : null,
     h('div', { class: 'facts', style: { padding: '10px 12px' } },
       h('div', null, h('small', null, '길이'), h('b', null, CR.short(L.total))),
       h('div', null, h('small', null, '클립'), h('b', null, String(L.list.length))),
@@ -503,7 +551,7 @@ CR.renderHome = async function () {
     h('div', { class: 'dropbig' },
       h('div', { class: 'ic' }, I('film')),
       h('div', { style: { textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '4px' } },
-        h('b', null, '영상을 여기에 끌어다 놓으세요'), h('p', null, '영상 MOV · MP4 · 소리 MP3 · WAV · M4A')),
+        h('b', null, '영상을 여기에 끌어다 놓으세요'), h('p', null, '영상 MOV · MP4 · 소리 MP3 · WAV · M4A · 사진 JPG · PNG · HEIC')),
       h('div', { class: 'actions', style: { marginTop: '4px' } },
         h('button', { class: 'btn primary big', style: { height: '38px', fontSize: '14px' }, onclick: () => CR.startNew() }, '새 프로젝트'),
         h('button', { class: 'btn big', style: { height: '38px', fontSize: '14px' }, onclick: async () => {
@@ -514,7 +562,9 @@ CR.renderHome = async function () {
             const r = await CR.native('open', {});
             if (r.paths && r.paths.length) { CR.P = CR.newProject(); CR.P.mode = 'quick'; CR.hist = { undo: [], redo: [] }; CR.S.sel = null; CR.S.t = 0; CR.go('editor'); CR.importPaths(r.paths); }
           } catch (e) { CR.toast(e.message, { bad: true }); }
-        } }, I('scissors'), '컷 편집만 하기'))),
+        } }, I('scissors'), '컷 편집만 하기')),
+      h('button', { class: 'btn big', style: { height: '42px', fontSize: '14px', borderColor: 'var(--accent)', fontWeight: 600, marginTop: '2px' }, onclick: () => CR.openAutoMake() },
+        I('photo'), '사진 + 음악으로 영상 만들기')),
     h('div', { class: 'keys' },
       h('span', null, h('span', { class: 'kbd', style: { color: 'var(--sub)' } }, '⌘N'), ' 새 프로젝트'),
       h('span', null, h('span', { class: 'kbd', style: { color: 'var(--sub)' } }, '⌘I'), ' 가져오기'),

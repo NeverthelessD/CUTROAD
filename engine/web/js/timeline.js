@@ -34,7 +34,7 @@ function tickStep(pps) {
 
 function snapTo(t, pps, except) {
   const L = CR.layout();
-  const pts = [CR.S.t, 0, L.total];
+  const pts = [CR.S.t, 0, L.total].concat(L.quick ? [] : CR.timelineBeats().beats);
   L.list.forEach((c, i) => { pts.push(L.starts[i], L.end(i)); });
   CR.P.audio.forEach((a) => { if (a.id !== except) pts.push(a.start, a.start + a.out - a.in); });
   CR.P.texts.forEach((x) => { if (x.id !== except) pts.push(x.start, x.end); });
@@ -162,6 +162,7 @@ CR.renderTimeline = function (host) {
     h('div', { class: 'tlhead', style: { height: '30px' } }, h('i', { style: { background: 'var(--tLine)' } }), '자막 · 텍스트'),
     h('div', { class: 'tlhead', style: { height: '62px' } }, h('i', { style: { background: 'var(--vLine)' } }), '영상'),
     h('div', { class: 'tlhead', style: { height: '44px' } }, h('i', { style: { background: 'var(--aWave)' } }), '영상 소리'),
+    CR.timelineBeats().beats.length ? h('div', { class: 'tlhead', style: { height: '18px' } }, h('i', { style: { background: 'var(--accent)' } }), '박자') : null,
     h('div', { class: 'tlhead', style: { height: '44px' } }, h('i', { style: { background: 'var(--bWave)' } }), '배경음악'));
 
   const scroll = h('div', { class: 'tlscroll' });
@@ -246,6 +247,7 @@ CR.renderTimeline = function (host) {
     const fx = [];
     if (c.speed !== 1) fx.push(c.speed + '×');
     if (c.blur > 0) fx.push('블러');
+    if (c.filter && c.filter !== 'none') fx.push((CR.FILTER_NAMES.find((f) => f[0] === c.filter) || ['', ''])[1]);
     if (c.rotate) fx.push(c.rotate + '°');
     const clip = h('div', { class: 'clip' + (isSel ? ' sel' : '') + (m && m.missing ? ' missing' : ''), style: { left: left + 'px', width: w + 'px' },
       'data-id': c.id, title: m ? m.name : '' },
@@ -262,7 +264,13 @@ CR.renderTimeline = function (host) {
         drag(e, pps, (dt) => {
           const md = m ? m.duration : c.out;
           if (side === 'l') c.in = CR.round(CR.clamp(o.in + dt * c.speed, 0, c.out - 0.1), 3);
-          else c.out = CR.round(CR.clamp(o.out + dt * c.speed, c.in + 0.1, md), 3);
+          else {
+            let out = CR.clamp(o.out + dt * c.speed, c.in + 0.1, md);
+            // 끝을 끌면 가까운 박자에 붙어요
+            const st = L.starts[i], e = st + (out - c.in) / c.speed, sn = snapTo(e, pps, null);
+            if (sn !== e && sn > st + 0.1) out = CR.clamp(c.in + (sn - st) * c.speed, c.in + 0.1, md);
+            c.out = CR.round(out, 3);
+          }
           CR.renderTimeline();
           const L2 = CR.layout(), j = L2.list.indexOf(c);
           CR.Player.seek(side === 'l' ? L2.starts[j] : L2.end(j) - 0.001);
@@ -324,9 +332,9 @@ CR.renderTimeline = function (host) {
       const env = envSVG(w, 44, CR.dur(c), Math.max(c.fadeIn, prevT), Math.max(c.fadeOut, L.trans[i]), pps);
       if (env) ab.appendChild(env);
       if (c.volume === 0) ab.appendChild(h('span', { class: 'nm', style: { color: 'var(--dim)' } }, '소리 끔'));
-    } else {
+    } else if (!m || m.kind !== 'image') {
       ab.appendChild(h('span', { class: 'nm', style: { color: 'var(--dim)' } }, '소리 없음'));
-    }
+    } else ab.style.opacity = '.35';
     ab.addEventListener('pointerdown', (e) => {
       CR.select('clip', c.id);
       const rect = inner.getBoundingClientRect();
@@ -344,6 +352,24 @@ CR.renderTimeline = function (host) {
   }
 
   // 배경음악 줄
+  // 박자 줄 (배경음악에 박자 정보가 있으면)
+  const TB = CR.timelineBeats();
+  let tBeat = null;
+  if (TB.beats.length) {
+    tBeat = h('div', { class: 'track beats', onpointerdown: laneClick });
+    const ds = new Set(TB.down);
+    const cuts = new Set(L.list.map((c, i) => Math.round((L.starts[i] + (i > 0 ? L.trans[i - 1] / 2 : 0)) * 100)));
+    const minGap = 3 / pps;
+    let lastX = -1e9;
+    TB.beats.forEach((b) => {
+      const x = X(b);
+      if (x - lastX < 3) return;
+      lastX = x;
+      const cut = cuts.has(Math.round(b * 100)) || [...cuts].some((k) => Math.abs(k / 100 - b) < minGap);
+      tBeat.appendChild(h('div', { class: 'beat' + (ds.has(b) ? ' down' : '') + (cut ? ' cut' : ''), style: { left: x + 'px' } }));
+    });
+    TB.climax.forEach(([a, b]) => tBeat.appendChild(h('div', { class: 'climax', style: { left: X(a) + 'px', width: X(b - a) + 'px' }, title: '음악이 가장 신나는 부분' })));
+  }
   const tBgm = h('div', { class: 'track bgm', onpointerdown: laneClick });
   P.audio.forEach((a) => {
     const m = CR.media(a.mediaId);
@@ -391,7 +417,7 @@ CR.renderTimeline = function (host) {
     tBgm.appendChild(blk);
   });
 
-  inner.append(tText, tVid, tAud, tBgm);
+  CR.put(inner, tText, tVid, tAud, tBeat, tBgm);
   if (!L.list.length) inner.appendChild(h('div', { class: 'tlempty' }, '영상 파일을 끌어다 놓거나 [가져오기]를 누르세요'));
   const ph = h('div', { class: 'playhead', style: { left: X(CR.S.t) + 8 + 'px' } });
   inner.appendChild(ph);
@@ -419,7 +445,7 @@ CR.renderTimeline = function (host) {
   }, { passive: false });
 };
 
-CR.transName = (t) => ({ dissolve: '디졸브', fadeblack: '검은 화면', wipe: '와이프', slide: '밀어내기' })[t] || '없음';
+CR.transName = (t) => (CR.TRANS.find((x) => x[0] === t) || ['', '없음'])[1];
 
 CR.addTransHere = function () {
   const L = CR.layout();

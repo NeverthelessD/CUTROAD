@@ -17,10 +17,13 @@ CR.normalize = function (p) {
   p.clips.forEach((c) => {
     c.speed = c.speed || 1; c.volume = c.volume === undefined ? 1 : c.volume;
     c.fadeIn = c.fadeIn || 0; c.fadeOut = c.fadeOut || 0; c.blur = c.blur || 0; c.rotate = c.rotate || 0;
+    c.motion = c.motion || 'none'; c.filter = c.filter || 'none';
     if (c.trans === undefined) c.trans = null;
   });
   p.audio.forEach((a) => { a.volume = a.volume === undefined ? 0.6 : a.volume; a.fadeIn = a.fadeIn || 0; a.fadeOut = a.fadeOut || 0; });
   p.texts.forEach((x) => { x.pos = x.pos || 'bottom'; x.size = x.size || 'm'; if (x.box === undefined) x.box = x.kind !== 'title'; });
+  p.bgBlur = !!p.bgBlur; p.photoFrame = !!p.photoFrame;
+  p.beatFx = Object.assign({ pulse: false, flash: false, shake: false }, p.beatFx || {});
   return p;
 };
 
@@ -200,11 +203,20 @@ CR.refreshMedia = async function () {
       const m = CR.P.media[i];
       if (!m) return;
       m.missing = !!it.error;
-      if (!it.error) Object.assign(m, { duration: it.duration, width: it.width, height: it.height, fps: it.fps, hasAudio: it.hasAudio });
+      if (!it.error) CR.applyProbe(m, it);
     });
   } catch (e) { /* 앱 밖에서 시험할 때 */ }
   CR.P.media.forEach((m) => { if (!m.missing) CR.loadAssets(m); });
   CR.render && CR.render('all');
+};
+
+/** 파일 정보를 미디어에 넣어요 (사진은 미리보기 · 작은 그림 · 찍은 날짜도) */
+CR.applyProbe = function (m, it) {
+  Object.assign(m, { name: it.name, kind: it.kind, duration: it.duration, width: it.width, height: it.height, fps: it.fps, hasAudio: it.hasAudio, size: it.size, missing: false });
+  if (it.kind === 'image') {
+    m.preview = it.preview; m.taken = it.taken;
+    if (it.thumb) CR.cache.thumbs[m.path] = { frames: [it.thumb], interval: 1e9, aspect: it.width && it.height ? it.width / it.height : 4 / 3 };
+  }
 };
 
 CR.loadAssets = function (m) {
@@ -245,16 +257,16 @@ CR.importPaths = async function (paths, opt) {
         m = { id: 'm' + CR.uid(), path: it.path, name: it.name, kind: it.kind };
         CR.P.media.push(m);
       }
-      Object.assign(m, { name: it.name, kind: it.kind, duration: it.duration, width: it.width, height: it.height, fps: it.fps, hasAudio: it.hasAudio, missing: false });
+      CR.applyProbe(m, it);
       if (opt.binOnly) return;
-      if (m.kind === 'video') CR.appendClip(m);
+      if (m.kind === 'video' || m.kind === 'image') CR.appendClip(m);
       else CR.addBGM(m);
     });
     if (CR.P.name === '새 프로젝트') {
-      const v = good.find((x) => x.kind === 'video') || good[0];
+      const v = good.find((x) => x.kind !== 'audio') || good[0];
       CR.P.name = v.name.replace(/\.[^.]+$/, '');
     }
-    if (CR.P.clips.length && CR.P.clips.length === good.filter((x) => x.kind === 'video').length) {
+    if (CR.P.clips.length && CR.P.clips.length === good.filter((x) => x.kind !== 'audio').length) {
       // 첫 영상의 모양에 맞춰 화면 비율을 정해요 (세로 영상이면 9:16)
       const fv = good.find((x) => x.kind === 'video');
       if (fv && fv.width && fv.height) {
@@ -269,8 +281,10 @@ CR.importPaths = async function (paths, opt) {
   CR.render('all');
 };
 
-CR.appendClip = function (m, index) {
-  const c = { id: 'c' + CR.uid(), mediaId: m.id, in: 0, out: CR.round(m.duration, 3), speed: 1, volume: 1, fadeIn: 0, fadeOut: 0, blur: 0, rotate: 0, trans: null };
+CR.appendClip = function (m, index, dur) {
+  const out = m.kind === 'image' ? (dur || 3) : CR.round(m.duration, 3);
+  const c = { id: 'c' + CR.uid(), mediaId: m.id, in: 0, out: CR.round(out, 3), speed: 1, volume: 1, fadeIn: 0, fadeOut: 0, blur: 0, rotate: 0,
+    motion: 'none', filter: 'none', trans: null };
   if (index === undefined || index >= CR.P.clips.length) CR.P.clips.push(c);
   else CR.P.clips.splice(index, 0, c);
   return c;
@@ -464,14 +478,24 @@ CR.spec = function (opt) {
   opt = opt || {};
   const P = CR.P;
   const path = (id) => { const m = CR.media(id); return m ? m.path : ''; };
-  const clips = CR.kept().map((c) => ({ path: path(c.mediaId), in: c.in, out: c.out,
-    speed: opt.plain ? 1 : c.speed, volume: c.volume, fadeIn: opt.plain ? 0 : c.fadeIn, fadeOut: opt.plain ? 0 : c.fadeOut,
-    blur: opt.plain ? 0 : c.blur, rotate: opt.plain ? 0 : c.rotate, trans: opt.plain ? null : c.trans }));
+  const clips = CR.kept().map((c) => {
+    const m = CR.media(c.mediaId) || {};
+    return { path: path(c.mediaId), kind: m.kind === 'image' ? 'image' : 'video', w: m.width || 0, h: m.height || 0, in: c.in, out: c.out,
+      speed: opt.plain ? 1 : c.speed, volume: c.volume, fadeIn: opt.plain ? 0 : c.fadeIn, fadeOut: opt.plain ? 0 : c.fadeOut,
+      blur: opt.plain ? 0 : c.blur, rotate: opt.plain ? 0 : c.rotate, trans: opt.plain ? null : c.trans,
+      motion: opt.plain ? 'none' : c.motion, filter: opt.plain ? 'none' : c.filter };
+  });
   const audio = opt.plain ? [] : P.audio.map((a) => ({ path: path(a.mediaId), start: a.start, in: a.in, out: a.out, volume: a.volume, fadeIn: a.fadeIn, fadeOut: a.fadeOut }));
   let texts = opt.plain ? [] : P.texts.slice();
   if (opt.captions === 'none' || opt.captions === 'srt') texts = texts.filter((x) => x.kind !== 'caption');
-  return { clips, audio, texts: texts.map((x) => ({ text: x.text, start: x.start, end: x.end, pos: x.pos, size: x.size, box: x.box })),
-    aspect: P.aspect, fit: P.fit };
+  const out = { clips, audio, texts: texts.map((x) => ({ text: x.text, start: x.start, end: x.end, pos: x.pos, size: x.size, box: x.box })),
+    aspect: P.aspect, fit: P.fit, bgBlur: !opt.plain && P.bgBlur, photoFrame: !opt.plain && P.photoFrame };
+  const fx = P.beatFx || {};
+  if (!opt.plain && (fx.pulse || fx.flash || fx.shake)) {
+    const B = CR.timelineBeats();
+    out.beatFx = { pulse: !!fx.pulse, flash: !!fx.flash, shake: !!fx.shake, beats: B.beats, flashes: B.flashes, climax: B.climax };
+  }
+  return out;
 };
 
 /** SRT 자막 파일 내용 */
@@ -482,4 +506,291 @@ CR.srt = function () {
   };
   return CR.P.texts.filter((x) => x.kind === 'caption').sort((a, b) => a.start - b.start)
     .map((x, i) => (i + 1) + '\n' + tc(x.start) + ' --> ' + tc(x.end) + '\n' + x.text + '\n').join('\n');
+};
+
+// ---------------------------------------------------------------- 효과 (Render.swift 의 Effects 와 같은 값)
+
+CR.MOTIONS = [['zoomIn', '천천히 확대'], ['zoomOut', '천천히 축소'], ['panL', '왼쪽 → 오른쪽'], ['panR', '오른쪽 → 왼쪽'],
+  ['up', '위로'], ['down', '아래로'], ['tilt', '기울며 확대'], ['none', '움직이지 않기']];
+CR.motion = function (m, p) {
+  p = CR.clamp(p || 0, 0, 1);
+  switch (m) {
+    case 'zoomIn': return { s: 1 + 0.12 * p, dx: 0, dy: 0, rot: 0 };
+    case 'zoomOut': return { s: 1.12 - 0.12 * p, dx: 0, dy: 0, rot: 0 };
+    case 'panL': return { s: 1.12, dx: 0.05 - 0.10 * p, dy: 0, rot: 0 };
+    case 'panR': return { s: 1.12, dx: -0.05 + 0.10 * p, dy: 0, rot: 0 };
+    case 'up': return { s: 1.12, dx: 0, dy: -0.04 + 0.08 * p, rot: 0 };
+    case 'down': return { s: 1.12, dx: 0, dy: 0.04 - 0.08 * p, rot: 0 };
+    case 'tilt': return { s: 1.1 + 0.08 * p, dx: 0, dy: 0, rot: -3 + 3 * p };
+    default: return { s: 1, dx: 0, dy: 0, rot: 0 };
+  }
+};
+
+CR.FILTER_NAMES = [['none', '원본'], ['warm', '따뜻하게'], ['cool', '시원하게'], ['vivid', '선명하게'], ['mono', '흑백'], ['vintage', '빈티지'], ['film', '필름'], ['faded', '바랜 색']];
+CR.FILTERS = {
+  warm: [['sepia', 0.25], ['saturate', 1.3], ['hue-rotate', -8]],
+  cool: [['saturate', 1.1], ['hue-rotate', 18], ['brightness', 1.05]],
+  vivid: [['saturate', 1.7], ['contrast', 1.15]],
+  mono: [['grayscale', 1], ['contrast', 1.2]],
+  vintage: [['sepia', 0.75], ['contrast', 0.9], ['brightness', 1.05]],
+  film: [['contrast', 1.15], ['saturate', 0.75], ['sepia', 0.2]],
+  faded: [['contrast', 0.8], ['brightness', 1.12], ['saturate', 0.65]],
+};
+CR.cssFilter = function (name) {
+  const ops = CR.FILTERS[name];
+  if (!ops) return '';
+  return ops.map(([k, v]) => k + '(' + v + (k === 'hue-rotate' ? 'deg' : '') + ')').join(' ');
+};
+
+CR.TRANS = [['dissolve', '디졸브'], ['fadeblack', '검은 화면'], ['flash', '흰색 번쩍'], ['wipe', '와이프'], ['slide', '밀어내기'],
+  ['circle', '원형 열기'], ['zoom', '확대하며'], ['spin', '빙글 돌며'], ['blur', '흐리게'], ['blinds', '블라인드']];
+CR.BEATFX = [['pulse', '박자 펄스'], ['flash', '강한 박자에 번쩍'], ['shake', '절정에서 흔들림']];
+
+/** 배경음악에 저장된 박자(음악 기준 시각)를 타임라인 시각으로 */
+CR.timelineBeats = function () {
+  const P = CR.P;
+  const total = CR.timing(CR.kept()).total;
+  const key = JSON.stringify(P.audio.map((a) => [a.id, a.start, a.in, a.out, !!a.beats])) + '|' + total;
+  if (CR.cache.tlBeats && CR.cache.tlBeats.key === key) return CR.cache.tlBeats;
+  const beats = [], down = [], flashes = [], climax = [];
+  P.audio.forEach((a) => {
+    const B = a.beats;
+    if (!B || !B.beats) return;
+    const end = Math.min(total, a.start + (a.out - a.in));
+    const map = (b) => a.start + (b - a.in);
+    const ds = new Set(B.downbeats || []);
+    B.beats.forEach((b, i) => {
+      if (b < a.in || b >= a.out) return;
+      const t = map(b);
+      if (t < 0 || t >= end) return;
+      beats.push(t);
+      if (ds.has(b)) { down.push(t); if ((B.energy && B.energy[i] || 0) >= 0.7) flashes.push(t); }
+    });
+    (B.climax || []).forEach(([x, y]) => {
+      const s = Math.max(a.start, map(x)), e = Math.min(end, map(y));
+      if (e > s) climax.push([CR.round(s, 3), CR.round(e, 3)]);
+    });
+  });
+  beats.sort((x, y) => x - y); down.sort((x, y) => x - y); flashes.sort((x, y) => x - y);
+  CR.cache.tlBeats = { key, beats, down, flashes, climax };
+  return CR.cache.tlBeats;
+};
+
+function lastLE(a, t) {
+  let lo = 0, hi = a.length - 1, r = -1;
+  while (lo <= hi) { const m = (lo + hi) >> 1; if (a[m] <= t) { r = m; lo = m + 1; } else hi = m - 1; }
+  return r >= 0 ? a[r] : null;
+}
+
+/** 박자 효과 (Render.swift 의 BeatFx.at 과 같은 계산) */
+CR.beatFxAt = function (t) {
+  const fx = CR.P && CR.P.beatFx;
+  if (!fx || !(fx.pulse || fx.flash || fx.shake)) return null;
+  const B = CR.timelineBeats();
+  let s = 1, dx = 0, dy = 0, white = 0;
+  const b = lastLE(B.beats, t);
+  if (b !== null) {
+    const e = t - b;
+    if (fx.pulse && e < 0.5) s = 1 + 0.035 * Math.exp(-e / 0.12);
+    if (fx.shake && e < 0.6 && B.climax.some(([x, y]) => t >= x && t < y)) {
+      const a = 0.012 * Math.exp(-e / 0.25);
+      dx = a * Math.sin(2 * Math.PI * 7 * t);
+      dy = 0.6 * a * Math.cos(2 * Math.PI * 9 * t);
+    }
+  }
+  if (fx.flash) { const f = lastLE(B.flashes, t); if (f !== null && t - f < 0.45) white = 0.45 * Math.exp(-(t - f) / 0.09); }
+  return { s, dx, dy, white };
+};
+
+// ---------------------------------------------------------------- 사진 + 음악 → 자동 배치
+
+/** 같은 씨앗이면 같은 순서 (다시 섞기에 씀) */
+CR.rng = function (seed) {
+  let x = (seed >>> 0) || 1;
+  return () => { x ^= x << 13; x >>>= 0; x ^= x >> 17; x ^= x << 5; x >>>= 0; return x / 4294967296; };
+};
+
+CR.STYLES = {
+  clean: { name: '깔끔하게', desc: '부드럽게 넘기고 천천히 확대', motions: ['zoomIn', 'zoomOut'], trans: ['dissolve'], color: 'none', beat: [] },
+  vlog: { name: '여행 브이로그', desc: '밀어내기 · 따뜻한 색 · 박자 펄스', motions: ['zoomIn', 'zoomOut', 'panL', 'panR'], trans: ['dissolve', 'slide', 'circle', 'zoom'], color: 'warm', beat: ['pulse'] },
+  film: { name: '감성 필름', desc: '흐리게 넘기기 · 필름 색감', motions: ['zoomIn', 'panL', 'panR'], trans: ['blur', 'dissolve', 'fadeblack'], color: 'film', beat: [] },
+  party: { name: '신나게', desc: '빠른 컷 · 번쩍 · 흔들림', motions: ['zoomIn', 'tilt', 'zoomOut'], trans: ['flash', 'zoom', 'spin', 'slide', 'wipe'], color: 'vivid', beat: ['pulse', 'flash', 'shake'], mood: 'upbeat' },
+  retro: { name: '레트로', desc: '빈티지 색 · 블라인드 넘기기', motions: ['zoomIn', 'up', 'down'], trans: ['blinds', 'wipe', 'fadeblack'], color: 'vintage', beat: ['flash'] },
+  mono: { name: '흑백 시네마', desc: '흑백 · 검은 화면 · 느린 움직임', motions: ['zoomIn', 'zoomOut', 'panR'], trans: ['fadeblack', 'dissolve'], color: 'mono', beat: [], mood: 'calm' },
+  auto: { name: '맡기기', desc: '스타일까지 음악에 맞춰 자동', motions: [], trans: [], color: 'none', beat: [] },
+};
+CR.autoStyle = function (ana) {
+  const e = ana && ana.energy && ana.energy.length ? ana.energy.reduce((x, y) => x + y, 0) / ana.energy.length : 0.5;
+  const bpm = (ana && ana.bpm) || 100;
+  if (bpm >= 118 && e >= 0.45) return 'party';
+  if (bpm >= 92) return 'vlog';
+  return 'film';
+};
+
+/**
+ * 사진 n장을 음악 박자에 맞춰 나눠요.
+ * ana = {beats, downbeats, energy, duration}, opt = {mood: calm|normal|upbeat, length: music|photos}
+ * 돌려주는 값: {bounds: [0, t1, t2, …, end] (n+1개), end, beatLen, note}
+ */
+CR.arrange = function (n, ana, opt) {
+  const dur = ana.duration || 0;
+  let beats = (ana.beats || []).filter((b) => b > 0.3 && b < dur - 0.2);
+  if (beats.length < 4) { beats = []; for (let t = 0.6; t < dur - 0.2; t += 0.6) beats.push(t); }
+  const gaps = beats.slice(1).map((b, i) => b - beats[i]).sort((x, y) => x - y);
+  const beatLen = gaps.length ? gaps[gaps.length >> 1] : 0.6;
+  const energyAt = (t) => {
+    if (!ana.energy || !ana.beats) return 0.5;
+    const i = Math.max(0, ana.beats.findIndex((b) => b > t) - 1);
+    return ana.energy[i] === undefined ? 0.5 : ana.energy[i];
+  };
+  const base = { calm: 8, normal: 4, upbeat: 2 }[opt.mood] || 4;
+  const want = (t) => { const e = energyAt(t); let L = base; if (e > 0.8) L /= 2; else if (e < 0.35) L *= 2; return Math.max(opt.mood === 'upbeat' ? 1 : 2, L); };
+  const minSeg = 0.4, maxSeg = 10;
+  let note = '';
+  // 박자 칸(grid): 0, 박자들…, 끝
+  const gridFor = (end, half) => {
+    let g = [0].concat(beats.filter((b) => b < end - 0.2));
+    if (half) { const h = []; g.forEach((b, i) => { h.push(b); const nx = i + 1 < g.length ? g[i + 1] : end; if (nx - b > 2 * minSeg) h.push((b + nx) / 2); }); g = h; }
+    g.push(end);
+    return g;
+  };
+  let end = dur;
+  if (opt.length === 'photos') {
+    // 사진마다 알맞은 박자 수만큼 → 음악보다 길면 음악 전체에 맞춰요
+    let t = 0, k = 0, bi = 0;
+    while (k < n && t < dur) {
+      const L = want(t);
+      bi += L;
+      t = bi - 1 < beats.length ? beats[Math.min(beats.length - 1, bi - 1)] : dur;
+      k++;
+    }
+    if (k >= n && t < dur - 0.5) end = t; else note = 'fit';
+  }
+  // 사진이 너무 적으면 한 장이 maxSeg 를 넘지 않게 영상을 줄여요
+  if (end / n > maxSeg) { end = Math.min(end, n * maxSeg * 0.8); note = 'short'; }
+  let grid = gridFor(end, false);
+  let S = grid.length - 1;
+  if (S < n) { grid = gridFor(end, true); S = grid.length - 1; }
+  if (S < n) {
+    // 사진이 아주 많으면 한 장 minSeg 초로, 영상은 음악보다 길 수 없어서 앞에서부터 고르게
+    end = Math.min(dur, n * minSeg * 1.5);
+    grid = []; for (let i = 0; i <= n; i++) grid.push(end * i / n);
+    S = n; note = 'many';
+  }
+  // 무게(박자 수)를 나눠 갖고, 칸 경계에 맞춰 반올림
+  const w = []; let W = 0;
+  for (let i = 0; i < n; i++) { const x = want(end * (i + 0.5) / n); w.push(x); W += x; }
+  const avg = S / n;
+  const q = avg >= 6 ? 4 : avg >= 3 ? 2 : 1;
+  const idx = [0];
+  let acc = 0;
+  for (let i = 0; i < n - 1; i++) {
+    acc += w[i];
+    let b = Math.round((S * acc / W) / q) * q;
+    b = Math.max(b, idx[idx.length - 1] + 1);
+    b = Math.min(b, S - (n - 1 - i));
+    idx.push(b);
+  }
+  idx.push(S);
+  return { bounds: idx.map((k) => CR.round(grid[k], 3)), end: CR.round(end, 3), beatLen, note };
+};
+
+/**
+ * 사진(probe 결과) + 음악으로 새 프로젝트를 만들어요.
+ * st = {photos, music, ana, style, motions, trans, color, beat, bgBlur, frame, mood, order, length, aspect, titleOn, title, dates, seed}
+ */
+CR.buildAuto = function (st) {
+  const rnd = CR.rng(st.seed || 1);
+  let photos = st.photos.slice();
+  if (st.order === 'date') photos.sort((a, b) => (a.taken || 0) - (b.taken || 0) || a.name.localeCompare(b.name, 'ko', { numeric: true }));
+  else if (st.order === 'name') photos.sort((a, b) => a.path.localeCompare(b.path, 'ko', { numeric: true }));
+  else { for (let i = photos.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [photos[i], photos[j]] = [photos[j], photos[i]]; } }
+  const n = photos.length;
+  const A = CR.arrange(n, st.ana, { mood: st.mood, length: st.length });
+  const segs = A.bounds.slice(1).map((b, i) => b - A.bounds[i]);
+  const P = CR.newProject();
+  P.name = (st.titleOn && st.title.trim()) || st.folderName || '사진 영상';
+  P.aspect = st.aspect; P.fit = 'fit';
+  P.bgBlur = !!st.bgBlur; P.photoFrame = !!st.frame;
+  P.beatFx = { pulse: st.beat.includes('pulse'), flash: st.beat.includes('flash'), shake: st.beat.includes('shake') };
+  P.auto = { folder: st.folder, folderName: st.folderName, music: st.music.path, style: st.style, mood: st.mood, order: st.order, length: st.length,
+    motions: st.motions, trans: st.trans, color: st.color, beat: st.beat, seed: st.seed, note: A.note };
+  photos.forEach((ph) => {
+    const m = { id: 'm' + CR.uid(), path: ph.path };
+    CR.applyProbe(m, ph);
+    P.media.push(m);
+  });
+  const mm = { id: 'm' + CR.uid(), path: st.music.path };
+  CR.applyProbe(mm, st.music);
+  P.media.push(mm);
+  // 넘기기 길이: 박자 길이에 맞춰 (잔잔하면 길게, 신나면 짧게)
+  const tBase = CR.clamp(A.beatLen * ({ calm: 1.5, normal: 1, upbeat: 0.5 }[st.mood] || 1), 0.25, 1.0);
+  const pick = (list, prev) => {
+    if (!list.length) return null;
+    if (list.length === 1) return list[0];
+    let x;
+    do { x = list[Math.floor(rnd() * list.length)]; } while (x === prev);
+    return x;
+  };
+  const tr = [];
+  let prevT = null;
+  for (let i = 0; i < n - 1; i++) {
+    const lim = Math.min(segs[i], segs[i + 1]) / 1.6;
+    if (!st.trans.length || lim < 0.2) { tr.push(0); continue; }
+    tr.push(Math.min(tBase, lim));
+  }
+  tr.push(0);
+  let prevM = null;
+  photos.forEach((ph, i) => {
+    const m = P.media[i];
+    const before = i > 0 ? tr[i - 1] : 0;
+    const d = segs[i] + before / 2 + tr[i] / 2;
+    const c = CR.appendClipTo(P, m, d);
+    c.motion = st.motions.length ? pick(st.motions, prevM) : 'none';
+    prevM = c.motion;
+    c.filter = st.color || 'none';
+    if (tr[i] > 0) { const ty = pick(st.trans, prevT); prevT = ty; c.trans = { type: ty, dur: CR.round(tr[i], 3) }; }
+    if (st.dates && ph.taken) {
+      const dt = new Date(ph.taken);
+      const s0 = A.bounds[i] + (i === 0 ? 0 : 0), s1 = A.bounds[i + 1];
+      P.texts.push({ id: 't' + CR.uid(), kind: 'caption', text: dt.getFullYear() + '. ' + (dt.getMonth() + 1) + '. ' + dt.getDate() + '.',
+        start: CR.round(s0, 2), end: CR.round(s1, 2), pos: 'br', size: 's', box: false });
+    }
+  });
+  if (n) { P.clips[0].fadeIn = 0.6; P.clips[n - 1].fadeOut = Math.min(1.5, segs[n - 1] / 2); }
+  if (st.titleOn && st.title.trim()) {
+    const e = A.bounds.find((b) => b >= 2.5) || Math.min(3, A.end);
+    P.texts.unshift({ id: 't' + CR.uid(), kind: 'title', text: st.title.trim(), start: 0, end: CR.round(Math.min(e, 4.5, A.end), 2), pos: 'center', size: 'l', box: false });
+  }
+  const musicEnd = Math.min(st.music.duration, A.end);
+  P.audio.push({ id: 'a' + CR.uid(), mediaId: mm.id, start: 0, in: 0, out: CR.round(musicEnd, 3), volume: 0.8, fadeIn: 0,
+    fadeOut: musicEnd < st.music.duration - 0.5 ? 2.5 : 1.5,
+    beats: { bpm: st.ana.bpm, beats: st.ana.beats, downbeats: st.ana.downbeats, energy: st.ana.energy, climax: st.ana.climax } });
+  P.thumb = photos[0] && photos[0].thumb;
+  return { P, segs, A, trans: tr };
+};
+
+CR.appendClipTo = function (P, m, dur) {
+  const c = { id: 'c' + CR.uid(), mediaId: m.id, in: 0, out: CR.round(dur, 3), speed: 1, volume: 1, fadeIn: 0, fadeOut: 0, blur: 0, rotate: 0,
+    motion: 'none', filter: 'none', trans: null };
+  P.clips.push(c);
+  return c;
+};
+
+/** 같은 컷 · 같은 길이로 움직임 · 넘기기만 새로 뽑아요 */
+CR.reshuffle = function () {
+  const a = CR.P && CR.P.auto;
+  if (!a) return;
+  const rnd = CR.rng((Date.now() & 0xffff) + 7);
+  const pick = (list, prev) => { if (!list.length) return null; if (list.length === 1) return list[0]; let x; do { x = list[Math.floor(rnd() * list.length)]; } while (x === prev); return x; };
+  CR.edit('효과 다시 섞기', () => {
+    let pm = null, pt = null;
+    CR.kept().forEach((c) => {
+      const m = CR.media(c.mediaId);
+      if (!m || m.kind !== 'image') return;
+      if (a.motions.length) { c.motion = pick(a.motions, pm); pm = c.motion; }
+      if (c.trans && a.trans.length) { c.trans.type = pick(a.trans, pt); pt = c.trans.type; }
+    });
+  });
+  CR.toast('움직임과 넘기기를 새로 섞었어요', { action: CR.undo });
 };

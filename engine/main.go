@@ -475,13 +475,17 @@ func (a *App) handleSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
-// mediaTypes: 가져올 수 있는 파일 (사용자 요청: mov · mp4 · mp3 · wav · m4a)
+// mediaTypes: 화면 미리보기로 보내는 파일 (사용자 요청: mov · mp4 · mp3 · wav · m4a, 1.1: 사진)
 var mediaTypes = map[string]string{
 	".mov": "video/quicktime",
 	".mp4": "video/mp4",
 	".mp3": "audio/mpeg",
 	".wav": "audio/wav",
 	".m4a": "audio/mp4",
+	// 1.1: 사진 미리보기 (앱이 cache 에 만든 JPG) · PNG 사진
+	".jpg":  "image/jpeg",
+	".jpeg": "image/jpeg",
+	".png":  "image/png",
 }
 
 func (a *App) handleMedia(w http.ResponseWriter, r *http.Request) {

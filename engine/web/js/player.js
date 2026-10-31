@@ -1,13 +1,15 @@
 // CUTROAD — 미리보기 재생기
 // made by. Nevertheless_D
 //
-// 영상 두 개(A · B)를 번갈아 써서 클립과 트랜지션을 이어 보여 주고, 소리는 Web Audio 로 볼륨 · 페이드를 맞춰요.
-// 효과(블러 · 페이드 · 회전 · 화면 맞춤 · 트랜지션 · 글자)는 내보내기(Render.swift)와 같은 계산으로 CSS 로 흉내 내요.
+// 칸(slot) 두 개를 번갈아 써서 클립과 트랜지션을 이어 보여 줘요. 칸마다 영상(<video>) · 사진(<img>) · 흐린 배경이 있어요.
+// 효과(움직임 · 색감 · 블러 · 페이드 · 회전 · 맞춤 · 액자 · 넘기기 10가지 · 박자 효과 · 글자)는
+// 내보내기(Render.swift)와 같은 계산 · 같은 순서로 CSS 로 그려요.
+//   stage > fx(박자 효과) > slot(넘기기) > look(블러 · 색감 · 페이드) > [흐린 배경, 영상/사진, 필름 가장자리]
 'use strict';
 
 CR.Player = {
   playing: false,
-  vids: [],
+  slots: [],
   stage: null,
   txtLayer: null,
   W: 640, H: 360,
@@ -23,17 +25,42 @@ CR.Player = {
       v.preload = 'auto';
       v.playsInline = true;
       v.disablePictureInPicture = true;
+      v.className = 'media';
       v.addEventListener('loadedmetadata', () => { v._ready = true; this.apply(); });
       v.addEventListener('seeked', () => { if (!this.playing) this.draw(); });
       v.addEventListener('error', () => { v._ready = false; v._error = true; this.apply(); });
-      this.vids.push(v);
+      const img = document.createElement('img');
+      img.className = 'media';
+      img.decoding = 'async';
+      img.addEventListener('load', () => { img._ready = true; img._error = false; this.draw(); });
+      img.addEventListener('error', () => { img._ready = false; img._error = true; this.draw(); });
+      const bg = document.createElement('img');
+      bg.className = 'bgfill';
+      const vign = document.createElement('div');
+      vign.className = 'vign';
+      const look = document.createElement('div');
+      look.className = 'look';
+      look.append(bg, v, img, vign);
+      const el = document.createElement('div');
+      el.className = 'slot';
+      el.appendChild(look);
+      this.slots.push({ el, look, v, img, bg, vign });
     }
+    this.fx = document.createElement('div');
+    this.fx.className = 'fx';
+    this.tflash = document.createElement('div');
+    this.tflash.className = 'flashfx';
+    this.slots.forEach((s) => this.fx.appendChild(s.el));
+    this.fx.appendChild(this.tflash);
+    this.bflash = document.createElement('div');
+    this.bflash.className = 'flashfx';
   },
 
   mount(stage, txtLayer) {
     this.stage = stage;
     this.txtLayer = txtLayer;
-    this.vids.forEach((v) => stage.insertBefore(v, txtLayer));
+    stage.insertBefore(this.fx, txtLayer);
+    stage.insertBefore(this.bflash, txtLayer);
     this.apply();
   },
 
@@ -86,7 +113,7 @@ CR.Player = {
   pause() {
     this.playing = false;
     cancelAnimationFrame(this.raf);
-    this.vids.forEach((v) => { if (!v.paused) v.pause(); });
+    this.slots.forEach((s) => { if (!s.v.paused) s.v.pause(); });
     this.bgm.forEach((a) => { if (!a.paused) a.pause(); });
     this.apply();
     CR.onPlayState && CR.onPlayState();
@@ -103,17 +130,17 @@ CR.Player = {
     this.last = now;
     const L = CR.layout();
     let t = CR.S.t + dt;
-    // 화면에 나오는 클립 영상의 시각을 기준으로 맞춰요 (소리 · 화면이 어긋나지 않게)
+    // 화면에 나오는 영상 클립의 시각을 기준으로 맞춰요 (소리 · 화면이 어긋나지 않게)
     const i = CR.clipAt(CR.S.t, L);
     if (i >= 0) {
-      const c = L.list[i], v = this.vids[i % 2];
+      const c = L.list[i], s = this.slots[i % 2];
+      const m = CR.media(c.mediaId);
       const sp = L.quick ? 1 : c.speed;
-      if (v._ready && !v.paused && !v.seeking && v.dataset.clip === c.id) {
-        const tv = L.starts[i] + (v.currentTime - c.in) / sp;
+      if (m && m.kind !== 'image' && s.v._ready && !s.v.paused && !s.v.seeking && s.v.dataset.clip === c.id) {
+        const tv = L.starts[i] + (s.v.currentTime - c.in) / sp;
         if (tv > CR.S.t - 0.05 && tv < CR.S.t + 0.3) t = Math.max(CR.S.t, tv);
       }
     }
-    // 컷 편집만: 지운 조각은 건너뛰어요
     if (L.quick) {
       const j = CR.clipAt(t, L);
       if (j >= 0 && L.list[j].removed) {
@@ -133,7 +160,7 @@ CR.Player = {
     CR.onTime && CR.onTime();
   },
 
-  /** 지금 시각에 맞춰 영상 · 소리 · 글자를 맞춰요 */
+  /** 지금 시각에 맞춰 영상 · 사진 · 소리 · 글자를 맞춰요 */
   apply(L) {
     if (!this.stage || !CR.P) return;
     L = L || CR.layout();
@@ -144,33 +171,32 @@ CR.Player = {
       if (t >= L.starts[i] - 1e-6 && t < L.end(i) - 1e-6) active.push(i);
     }
     if (!active.length && L.list.length && t >= L.total - 1e-3) active.push(L.list.length - 1);
-    const used = new Set();
     const layers = [];
+    const used = new Set();
     active.slice(-2).forEach((i) => {
       const c = L.list[i];
       const m = CR.media(c.mediaId);
-      const v = this.vids[i % 2];
-      used.add(v);
+      const s = this.slots[i % 2];
+      used.add(s);
       const sp = L.quick ? 1 : c.speed;
       const target = CR.clamp(c.in + (t - L.starts[i]) * sp, 0, Math.max(0, c.out - 0.001));
-      this.sync(v, c, m, target, sp, playing);
-      layers.push({ i, c, m, v });
+      this.load(s, c, m, target, sp, playing);
+      layers.push({ i, c, m, s });
     });
     // 다음 클립 미리 준비
     const cur = active.length ? active[active.length - 1] : -1;
     const nx = cur + 1;
-    if (nx < L.list.length && L.starts[nx] - t < 2 && !used.has(this.vids[nx % 2])) {
+    if (nx < L.list.length && L.starts[nx] - t < 2 && !used.has(this.slots[nx % 2])) {
       const c = L.list[nx];
-      const v = this.vids[nx % 2];
-      this.sync(v, c, CR.media(c.mediaId), c.in, 1, false);
-      used.add(v);
+      const s = this.slots[nx % 2];
+      this.load(s, c, CR.media(c.mediaId), c.in, 1, false);
+      used.add(s);
     }
-    this.vids.forEach((v) => {
-      if (!layers.find((l) => l.v === v)) {
-        v.style.visibility = 'hidden';
-        if (!used.has(v) && !v.paused) v.pause();
-        if (!v.paused && playing) v.pause();
-        this.setVol(v, 0);
+    this.slots.forEach((s) => {
+      if (!layers.find((l) => l.s === s)) {
+        s.el.style.visibility = 'hidden';
+        if (!s.v.paused) s.v.pause();
+        this.setVol(s.v, 0);
       }
     });
     this.layers = layers;
@@ -179,14 +205,25 @@ CR.Player = {
     this.texts(t);
   },
 
-  sync(v, c, m, target, rate, playing) {
-    if (!m || m.missing) { v.dataset.clip = c.id; return; }
+  load(s, c, m, target, rate, playing) {
+    s.clip = c.id;
+    if (!m || m.missing) return;
+    if (m.kind === 'image') {
+      if (!s.v.paused) s.v.pause();
+      const url = m.preview ? CR.mediaURL(m.preview) : '';
+      if (s.img.dataset.url !== url) {
+        s.img.dataset.url = url;
+        s.img._ready = false; s.img._error = false;
+        if (url) s.img.src = url; else s.img.removeAttribute('src');
+      }
+      return;
+    }
+    const v = s.v;
     const url = CR.mediaURL(m.path);
     if (v.dataset.url !== url) {
       v.dataset.url = url;
       v._ready = false; v._error = false;
       v.src = url;
-      v._pendingSeek = target;
     }
     v.dataset.clip = c.id;
     if (!v._ready) return;
@@ -205,74 +242,126 @@ CR.Player = {
     }
   },
 
+  /** 화면 맞춤 (Render.swift layerImage 와 같은 계산) */
   geom(m, c) {
-    const W = this.W, H = this.H;
-    let w = (m && m.width) || 1920, h = (m && m.height) || 1080;
-    const rot = CR.quick() ? 0 : (c.rotate || 0);
+    const W = this.W, H = this.H, quick = CR.quick();
+    const w = (m && m.width) || 1920, h = (m && m.height) || 1080;
+    const rot = quick ? 0 : (c.rotate || 0);
     const rw = rot % 180 === 90 ? h : w, rh = rot % 180 === 90 ? w : h;
-    const fill = !CR.quick() && CR.P.fit === 'fill';
-    const s = fill ? Math.max(W / rw, H / rh) : Math.min(W / rw, H / rh);
-    return { w: w * s, h: h * s, left: (W - w * s) / 2, top: (H - h * s) / 2, rot };
+    const fill = !quick && CR.P.fit === 'fill';
+    const framed = !quick && m && m.kind === 'image' && CR.P.photoFrame;
+    const s = (fill ? Math.max(W / rw, H / rh) : Math.min(W / rw, H / rh)) * (framed ? 0.86 : 1);
+    return { w: w * s, h: h * s, left: (W - w * s) / 2, top: (H - h * s) / 2, rot, framed, fill };
   },
 
-  /** 화면 그리기: 위치 · 회전 · 블러 · 페이드 · 트랜지션 */
+  /** 화면 그리기 */
   draw(L) {
     if (!this.layers) return;
     L = L || CR.layout();
     const t = CR.S.t;
     const quick = L.quick;
-    const base = Math.min(this.W, this.H);
+    const W = this.W, H = this.H, base = Math.min(W, H);
+    let tWhite = 0;
     this.layers.forEach((ly, k) => {
-      const { v, c, m, i } = ly;
-      if (!m || m.missing || v._error) { v.style.visibility = 'hidden'; return; }
+      const { s, c, m, i } = ly;
+      const isImg = m && m.kind === 'image';
+      const el = isImg ? s.img : s.v;
+      const other = isImg ? s.v : s.img;
+      other.style.display = 'none';
+      el.style.display = 'block';
+      const bad = !m || m.missing || el._error;
+      s.el.style.visibility = bad ? 'hidden' : 'visible';
+      if (bad) return;
       const g = this.geom(m, c);
-      let tx = 0, opacity = 1, clip = 'none';
+      // 움직임
+      const mo = quick ? { s: 1, dx: 0, dy: 0, rot: 0 } : CR.motion(c.motion, (t - L.starts[i]) / Math.max(1e-3, L.end(i) - L.starts[i]));
+      const b = g.framed ? 0.012 * base : 0;
+      Object.assign(el.style, {
+        width: g.w + 'px', height: g.h + 'px', left: (g.left - b) + 'px', top: (g.top - b) + 'px',
+        border: b ? b + 'px solid #fff' : 'none',
+        transform: 'translate(' + (mo.dx * W) + 'px,' + (mo.dy * H) + 'px) rotate(' + (g.rot + mo.rot) + 'deg) scale(' + mo.s + ')',
+      });
+      // 흐린 배경 (사진이 화면을 다 채우지 못할 때)
+      const bgOn = !quick && isImg && CR.P.bgBlur && !g.fill;
+      s.bg.style.display = bgOn ? 'block' : 'none';
+      if (bgOn) {
+        if (s.bg.dataset.url !== s.img.dataset.url) { s.bg.dataset.url = s.img.dataset.url; s.bg.src = s.img.dataset.url; }
+        s.bg.style.filter = 'blur(' + (0.04 * base).toFixed(1) + 'px) brightness(.75)';
+      }
+      // 블러 · 색감 · 페이드
+      const f = [];
       let bright = 1;
       if (!quick) {
-        const s = L.starts[i], e = L.end(i);
-        if (c.fadeIn > 0 && t < s + c.fadeIn) bright = Math.min(bright, (t - s) / c.fadeIn);
-        if (c.fadeOut > 0 && t > e - c.fadeOut) bright = Math.min(bright, (e - t) / c.fadeOut);
-        // 트랜지션: 앞 클립(k=0)과 뒤 클립(k=1)이 겹친 구간
-        if (this.layers.length === 2) {
-          const a = this.layers[0], b = this.layers[1];
-          const tr = a.c.trans && a.c.trans.type;
-          const td = L.trans[a.i];
-          const p = td > 0 ? CR.clamp((t - L.starts[b.i]) / td, 0, 1) : 1;
-          if (tr === 'fadeblack') {
-            if (k === 0) { bright *= p < 0.5 ? 1 - p * 2 : 0; if (p >= 0.5) opacity = 0; }
-            else { bright *= p < 0.5 ? 0 : p * 2 - 1; if (p < 0.5) opacity = 0; }
-          } else if (tr === 'wipe') {
-            if (k === 1) clip = 'inset(0 ' + ((1 - p) * 100) + '% 0 0)';
-          } else if (tr === 'slide') {
-            tx = k === 0 ? -p * this.W : (1 - p) * this.W;
-          } else if (k === 1) {
-            opacity = p;
+        if (c.blur > 0) f.push('blur(' + (c.blur * base / 1080).toFixed(2) + 'px)');
+        f.push(CR.cssFilter(c.filter));
+        const st = L.starts[i], en = L.end(i);
+        if (c.fadeIn > 0 && t < st + c.fadeIn) bright = Math.min(bright, (t - st) / c.fadeIn);
+        if (c.fadeOut > 0 && t > en - c.fadeOut) bright = Math.min(bright, (en - t) / c.fadeOut);
+      }
+      if (bright < 0.999) f.push('brightness(' + CR.clamp(bright, 0, 1).toFixed(3) + ')');
+      s.look.style.filter = f.filter(Boolean).join(' ') || 'none';
+      s.vign.style.display = !quick && c.filter === 'film' ? 'block' : 'none';
+      // 넘기기 (앞 칸 k=0, 뒤 칸 k=1)
+      const st = s.el.style;
+      st.opacity = '1'; st.transform = 'none'; st.clipPath = 'none'; st.webkitMaskImage = st.maskImage = 'none'; st.filter = 'none';
+      st.zIndex = String(k + 1);
+      if (!quick && this.layers.length === 2) {
+        const a = this.layers[0], bL = this.layers[1];
+        const tr = a.c.trans && a.c.trans.type;
+        const td = L.trans[a.i];
+        const p = td > 0 ? CR.clamp((t - L.starts[bL.i]) / td, 0, 1) : 1;
+        const front = k === 1;
+        switch (tr) {
+          case 'fadeblack':
+            if (front) { st.opacity = p < 0.5 ? '0' : '1'; st.filter = 'brightness(' + (p < 0.5 ? 0 : p * 2 - 1) + ')'; }
+            else st.filter = 'brightness(' + (p < 0.5 ? 1 - p * 2 : 0) + ')';
+            break;
+          case 'flash':
+            if (front) st.opacity = p < 0.5 ? '0' : '1';
+            tWhite = p < 0.5 ? p * 2 : (1 - p) * 2;
+            break;
+          case 'wipe':
+            if (front) st.clipPath = 'inset(0 ' + ((1 - p) * 100) + '% 0 0)';
+            break;
+          case 'slide':
+            st.transform = 'translateX(' + (front ? (1 - p) * W : -p * W) + 'px)';
+            break;
+          case 'circle':
+            if (front) st.clipPath = 'circle(' + (p * Math.hypot(W, H) / 2) + 'px at 50% 50%)';
+            break;
+          case 'zoom':
+            if (front) { st.transform = 'scale(' + (1.3 - 0.3 * p) + ')'; st.opacity = String(p); } else st.transform = 'scale(' + (1 + 0.5 * p) + ')';
+            break;
+          case 'spin':
+            if (front) { st.transform = 'rotate(' + (-30 * (1 - p)) + 'deg) scale(' + (0.6 + 0.4 * p) + ')'; st.opacity = String(p); }
+            break;
+          case 'blur': {
+            const mb = 0.03 * base;
+            if (front) { st.filter = 'blur(' + (mb * (1 - p)).toFixed(1) + 'px)'; st.opacity = String(p); } else st.filter = 'blur(' + (mb * p).toFixed(1) + 'px)';
+            break;
           }
-          // wipe 의 잘라내기는 무대 기준이라 영상 위치에 맞게 바꿔요
-          if (tr === 'wipe' && k === 1) {
-            const right = Math.max(0, (g.left + g.w) - p * this.W);
-            clip = 'inset(0 ' + (right / g.w * 100) + '% 0 0)';
-            if (g.rot) clip = 'none';
-          }
+          case 'blinds':
+            if (front) {
+              const sw = W / 10, v = (p * sw).toFixed(2);
+              st.webkitMaskImage = st.maskImage = 'repeating-linear-gradient(90deg, #000 0 ' + v + 'px, transparent ' + v + 'px ' + sw.toFixed(2) + 'px)';
+            }
+            break;
+          default:
+            if (front) st.opacity = String(p);
         }
       }
-      const filters = [];
-      if (!quick && c.blur > 0) filters.push('blur(' + (c.blur * base / 1080).toFixed(2) + 'px)');
-      if (bright < 0.999) filters.push('brightness(' + CR.clamp(bright, 0, 1).toFixed(3) + ')');
-      Object.assign(v.style, {
-        visibility: 'visible',
-        width: g.w + 'px', height: g.h + 'px', left: g.left + 'px', top: g.top + 'px',
-        transform: 'translateX(' + tx + 'px) rotate(' + g.rot + 'deg)',
-        filter: filters.join(' ') || 'none',
-        opacity: String(CR.clamp(opacity, 0, 1)),
-        clipPath: clip,
-        zIndex: String(k + 1),
-      });
     });
+    this.tflash.style.opacity = String(tWhite);
+    // 박자 효과
+    const fx = quick ? null : CR.beatFxAt(t);
+    if (fx && (fx.s !== 1 || fx.dx || fx.dy)) this.fx.style.transform = 'translate(' + (fx.dx * W) + 'px,' + (fx.dy * W) + 'px) scale(' + fx.s + ')';
+    else this.fx.style.transform = 'none';
+    this.bflash.style.opacity = fx ? String(fx.white) : '0';
     const miss = this.stage.querySelector('.missing');
     if (miss) {
       const ly = this.layers[this.layers.length - 1];
-      const bad = ly && (!ly.m || ly.m.missing || ly.v._error);
+      const el = ly && ly.m && (ly.m.kind === 'image' ? ly.s.img : ly.s.v);
+      const bad = ly && (!ly.m || ly.m.missing || (el && el._error));
       miss.style.display = bad ? 'flex' : 'none';
       if (bad) miss.textContent = '파일을 찾을 수 없어요: ' + (ly.m ? ly.m.name : '');
     }
@@ -282,24 +371,25 @@ CR.Player = {
   audio(L, playing) {
     const t = CR.S.t;
     (this.layers || []).forEach((ly) => {
-      const { v, c, i } = ly;
+      const { s, c, i, m } = ly;
+      if (m && m.kind === 'image') { this.setVol(s.v, 0); return; }
       let g = c.volume;
       if (!L.quick) {
-        const s = L.starts[i], e = L.end(i), d = e - s;
+        const st = L.starts[i], e = L.end(i), d = e - st;
         let a = Math.max(c.fadeIn, i > 0 ? L.trans[i - 1] : 0), b = Math.max(c.fadeOut, L.trans[i]);
         if (a + b > d) { const k = d / (a + b); a *= k; b *= k; }
-        if (a > 0.001 && t < s + a) g *= (t - s) / a;
+        if (a > 0.001 && t < st + a) g *= (t - st) / a;
         if (b > 0.001 && t > e - b) g *= (e - t) / b;
       } else g = 1;
-      this.setVol(v, CR.clamp(g, 0, 4));
+      this.setVol(s.v, CR.clamp(g, 0, 4));
     });
     const seen = new Set();
     if (!L.quick) {
       CR.P.audio.forEach((a) => {
         const m = CR.media(a.mediaId);
         if (!m || m.missing) return;
-        const s = a.start, e = Math.min(L.total, a.start + (a.out - a.in));
-        if (t < s || t >= e) return;
+        const st = a.start, e = Math.min(L.total, a.start + (a.out - a.in));
+        if (t < st || t >= e) return;
         seen.add(a.id);
         let el = this.bgm.get(a.id);
         const url = CR.mediaURL(m.path);
@@ -311,13 +401,13 @@ CR.Player = {
         }
         if (el.dataset.url !== url) { el.dataset.url = url; el._ready = false; el.src = url; }
         let g = a.volume;
-        const d = e - s;
+        const d = e - st;
         let fi = a.fadeIn, fo = a.fadeOut;
         if (fi + fo > d) { const k = d / (fi + fo); fi *= k; fo *= k; }
-        if (fi > 0.001 && t < s + fi) g *= (t - s) / fi;
+        if (fi > 0.001 && t < st + fi) g *= (t - st) / fi;
         if (fo > 0.001 && t > e - fo) g *= (e - t) / fo;
         this.setVol(el, CR.clamp(g, 0, 1));
-        const target = a.in + (t - s);
+        const target = a.in + (t - st);
         if (!el._ready) return;
         if (playing) {
           if (el.paused) { el.currentTime = target; el.play().catch(() => {}); }
@@ -348,19 +438,25 @@ CR.Player = {
       d.style.padding = (x.box ? fs * 0.28 : fs * 0.2) + 'px ' + (x.box ? fs * 0.5 : fs * 0.3) + 'px';
       d.style.borderRadius = (fs * 0.28) + 'px';
       const margin = this.H * 0.07;
-      d.style.top = d.style.bottom = '';
+      d.style.top = d.style.bottom = d.style.left = d.style.right = '';
       d.style.transform = 'translateX(-50%)';
       if (x.pos === 'top') d.style.top = margin + 'px';
       else if (x.pos === 'center') { d.style.top = '50%'; d.style.transform = 'translate(-50%, -50%)'; }
+      else if (x.pos === 'br') { d.style.bottom = (margin * 0.6) + 'px'; d.style.left = 'auto'; d.style.right = (this.W * 0.04) + 'px'; d.style.transform = 'none'; }
       else d.style.bottom = margin + 'px';
+      if (x.pos !== 'br') d.style.left = '50%';
       if (d.textContent !== x.text) d.textContent = x.text;
     });
   },
 
-  /** 프로젝트가 바뀌면 영상 연결을 끊어요 */
+  /** 프로젝트가 바뀌면 연결을 끊어요 */
   reset() {
     this.pause();
-    this.vids.forEach((v) => { v.removeAttribute('src'); delete v.dataset.url; v._ready = false; v.load(); });
+    this.slots.forEach((s) => {
+      s.v.removeAttribute('src'); delete s.v.dataset.url; s.v._ready = false; s.v.load();
+      s.img.removeAttribute('src'); delete s.img.dataset.url; s.img._ready = false;
+      s.bg.removeAttribute('src'); delete s.bg.dataset.url;
+    });
     this.bgm.forEach((el) => { el.pause(); el.src = ''; });
     this.bgm.clear();
     this.layers = [];

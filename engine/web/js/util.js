@@ -94,6 +94,8 @@ const ICONS = {
   home: '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/>',
   restore: '<path d="M3 12a9 9 0 109-9"/><path d="M3 4v5h5"/>',
   wave: '<path d="M2 12h2M6 8v8M10 5v14M14 9v6M18 7v10M22 12h-2"/>',
+  photo: '<rect x="3" y="4" width="14" height="12" rx="2"/><path d="M3 13l4-4 4 4 2-2 4 4"/><path d="M20 8v9a2 2 0 01-2 2H7"/>',
+  sparkle: '<path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>',
   gif: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 10H8v4h2v-2M13 10v4M16 14v-4h2M16 12h1.5"/>',
 };
 CR.icon = function (name, cls) {
