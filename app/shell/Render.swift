@@ -176,14 +176,6 @@ enum Effects {
     struct M {
         var m: [Double] = [1, 0, 0, 0, 1, 0, 0, 0, 1]
         var b: [Double] = [0, 0, 0]
-        static func then(_ cur: M, _ nx: M) -> M {
-            var r = M()
-            for i in 0..<3 {
-                for j in 0..<3 { r.m[i * 3 + j] = (0..<3).reduce(0) { $0 + nx.m[i * 3 + $1] * cur.m[$1 * 3 + j] } }
-                r.b[i] = (0..<3).reduce(0) { $0 + nx.m[i * 3 + $1] * cur.b[$1] } + nx.b[i]
-            }
-            return r
-        }
     }
 
     static func op(_ name: String, _ a: Double) -> M {
@@ -205,10 +197,18 @@ enum Effects {
                    0.213 - 0.213 * s, 0.715 + 0.285 * s, 0.072 - 0.072 * s,
                    0.213 - 0.213 * s, 0.715 - 0.715 * s, 0.072 + 0.928 * s]
         case "hue":
-            let r = a * .pi / 180, c = cos(r), s = sin(r)
-            x.m = [0.213 + c * 0.787 - s * 0.213, 0.715 - c * 0.715 - s * 0.715, 0.072 - c * 0.072 + s * 0.928,
-                   0.213 - c * 0.213 + s * 0.143, 0.715 + c * 0.285 + s * 0.140, 0.072 - c * 0.072 - s * 0.283,
-                   0.213 - c * 0.213 - s * 0.787, 0.715 - c * 0.715 + s * 0.715, 0.072 + c * 0.928 + s * 0.072]
+            let r: Double = a * Double.pi / 180
+            let c: Double = cos(r), s: Double = sin(r)
+            let m0: Double = 0.213 + c * 0.787 - s * 0.213
+            let m1: Double = 0.715 - c * 0.715 - s * 0.715
+            let m2: Double = 0.072 - c * 0.072 + s * 0.928
+            let m3: Double = 0.213 - c * 0.213 + s * 0.143
+            let m4: Double = 0.715 + c * 0.285 + s * 0.140
+            let m5: Double = 0.072 - c * 0.072 - s * 0.283
+            let m6: Double = 0.213 - c * 0.213 - s * 0.787
+            let m7: Double = 0.715 - c * 0.715 + s * 0.715
+            let m8: Double = 0.072 + c * 0.928 + s * 0.072
+            x.m = [m0, m1, m2, m3, m4, m5, m6, m7, m8]
         case "brightness":
             x.m = [a, 0, 0, 0, a, 0, 0, 0, a]
         case "contrast":
