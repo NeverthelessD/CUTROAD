@@ -130,7 +130,9 @@ CR.Player = {
     this.last = now;
     const L = CR.layout();
     let t = CR.S.t + dt;
-    // 화면에 나오는 영상 클립의 시각을 기준으로 맞춰요 (소리 · 화면이 어긋나지 않게)
+    // 기준 시계: 화면에 나오는 영상이 있으면 그 영상, 사진만 있으면 배경음악.
+    // (화면이 잠깐 버벅여도 소리를 억지로 되감지 않고, 화면이 소리를 따라가요 — 1.1.1)
+    let clocked = false;
     const i = CR.clipAt(CR.S.t, L);
     if (i >= 0) {
       const c = L.list[i], s = this.slots[i % 2];
@@ -138,9 +140,14 @@ CR.Player = {
       const sp = L.quick ? 1 : c.speed;
       if (m && m.kind !== 'image' && s.v._ready && !s.v.paused && !s.v.seeking && s.v.dataset.clip === c.id) {
         const tv = L.starts[i] + (s.v.currentTime - c.in) / sp;
-        if (tv > CR.S.t - 0.05 && tv < CR.S.t + 0.3) t = Math.max(CR.S.t, tv);
+        if (tv > CR.S.t - 0.05 && tv < CR.S.t + 0.3) { t = Math.max(CR.S.t, tv); clocked = true; }
       }
     }
+    if (!clocked && !L.quick) {
+      const ta = this.bgmClock(CR.S.t);
+      if (ta !== null && ta > CR.S.t - 0.6 && ta < CR.S.t + 3) t = ta; // 화면이 멈췄던 만큼 음악을 따라잡아요
+    }
+    this.clockedByVideo = clocked;
     if (L.quick) {
       const j = CR.clipAt(t, L);
       if (j >= 0 && L.list[j].removed) {
@@ -158,6 +165,18 @@ CR.Player = {
     CR.S.t = t;
     this.apply(L);
     CR.onTime && CR.onTime();
+  },
+
+  /** 재생 중인 배경음악이 가리키는 타임라인 시각 (없으면 null) */
+  bgmClock(t) {
+    if (!CR.P) return null;
+    for (const a of CR.P.audio) {
+      const el = this.bgm.get(a.id);
+      if (!el || el.paused || el.seeking || !el._ready || el.readyState < 3) continue;
+      if (t < a.start - 0.05 || t > a.start + (a.out - a.in)) continue;
+      return a.start + (el.currentTime - a.in);
+    }
+    return null;
   },
 
   /** 지금 시각에 맞춰 영상 · 사진 · 소리 · 글자를 맞춰요 */
@@ -410,8 +429,9 @@ CR.Player = {
         const target = a.in + (t - st);
         if (!el._ready) return;
         if (playing) {
-          if (el.paused) { el.currentTime = target; el.play().catch(() => {}); }
-          else if (Math.abs(el.currentTime - target) > 0.3) el.currentTime = target;
+          if (el.paused) { if (Math.abs(el.currentTime - target) > 0.05) el.currentTime = target; el.play().catch(() => {}); }
+          // 영상이 기준일 때만, 많이 어긋나면(0.5초 넘게) 맞춰요. 사진만 있을 때는 음악이 기준이라 되감지 않아요
+          else if (this.clockedByVideo && Math.abs(el.currentTime - target) > 0.5 && !el.seeking) el.currentTime = target;
         } else if (!el.paused) el.pause();
       });
     }
