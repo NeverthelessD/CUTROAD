@@ -674,6 +674,7 @@ final class Built {
 enum Builder {
     /// 사진 클립 밑에 까는 검은 바탕 영상 (64×64, 10초) — 처음 한 번 만들어서 cache 에 둬요
     static let baseLock = NSLock()
+    static var baseAsset: AVURLAsset?
     static func baseTrack() throws -> AVAssetTrack {
         baseLock.lock(); defer { baseLock.unlock() }
         try? FileManager.default.createDirectory(at: Paths.cache, withIntermediateDirectories: true)
@@ -708,7 +709,9 @@ enum Builder {
             try? FileManager.default.removeItem(at: url)
             try FileManager.default.moveItem(at: tmp, to: url)
         }
-        guard let t = AVURLAsset(url: url).tracks(withMediaType: .video).first else { throw RenderError("사진용 바탕을 읽지 못했어요") }
+        // 영상(asset)을 붙잡아 둬야 트랙을 쓸 수 있어요 (놓치면 '알 수 없는 오류 -12780')
+        if baseAsset == nil { baseAsset = AVURLAsset(url: url) }
+        guard let t = baseAsset?.tracks(withMediaType: .video).first else { throw RenderError("사진용 바탕을 읽지 못했어요") }
         return t
     }
 
