@@ -31,6 +31,7 @@ func ct(_ s: Double) -> CMTime { CMTime(seconds: max(0, s), preferredTimescale: 
 
 struct ClipSpec {
     let path: String
+    let kind: String          // video | image
     let inT: Double
     let outT: Double
     let speed: Double
@@ -39,20 +40,28 @@ struct ClipSpec {
     let fadeOut: Double
     let blur: Double
     let rotate: Int
+    let motion: String        // Effects.motion
+    let filter: String        // Effects.filters
+    let w: Double, h: Double  // 사진 크기 (방향 반영)
     let transType: String?
     let transDur: Double
     var dur: Double { (outT - inT) / speed }
+    var isImage: Bool { kind == "image" }
 
     init(_ d: [String: Any]) {
         path = str(d, "path", "")
+        kind = str(d, "kind", "video")
         inT = max(0, num(d, "in", 0))
         outT = max(inT + 0.05, num(d, "out", inT + 1))
-        speed = min(4, max(0.25, num(d, "speed", 1)))
+        speed = kind == "image" ? 1 : min(4, max(0.25, num(d, "speed", 1)))
         volume = min(1, max(0, num(d, "volume", 1)))
         fadeIn = max(0, num(d, "fadeIn", 0))
         fadeOut = max(0, num(d, "fadeOut", 0))
         blur = max(0, num(d, "blur", 0))
         rotate = ((Int(num(d, "rotate", 0)) % 360) + 360) % 360
+        motion = str(d, "motion", "none")
+        filter = str(d, "filter", "none")
+        w = num(d, "w", 0); h = num(d, "h", 0)
         if let t = d["trans"] as? [String: Any], let type = t["type"] as? String, !type.isEmpty {
             transType = type
             transDur = max(0, num(t, "dur", 0.8))
@@ -86,7 +95,7 @@ struct TextSpec {
     let text: String
     let start: Double
     let end: Double
-    let pos: String
+    let pos: String           // top | center | bottom | br(오른쪽 아래 구석)
     let size: String
     let box: Bool
     init(_ d: [String: Any]) {
@@ -99,6 +108,167 @@ struct TextSpec {
     }
 }
 
+/// 박자 효과 (타임라인 시각 기준) — app.js 의 CR.beatFxAt() 과 같은 계산
+struct BeatFx {
+    var pulse = false, flash = false, shake = false
+    var beats: [Double] = [], flashes: [Double] = [], climax: [[Double]] = []
+    init() {}
+    init(_ d: [String: Any]?) {
+        guard let d = d else { return }
+        pulse = (d["pulse"] as? Bool) ?? false
+        flash = (d["flash"] as? Bool) ?? false
+        shake = (d["shake"] as? Bool) ?? false
+        beats = (d["beats"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.doubleValue }.sorted()
+        flashes = (d["flashes"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.doubleValue }.sorted()
+        climax = (d["climax"] as? [[Any]] ?? []).map { $0.compactMap { ($0 as? NSNumber)?.doubleValue } }.filter { $0.count == 2 }
+    }
+    var any: Bool { (pulse || shake) && !beats.isEmpty || flash && !flashes.isEmpty }
+    static func last(_ a: [Double], _ t: Double) -> Double? {
+        var lo = 0, hi = a.count - 1, r = -1
+        while lo <= hi { let m = (lo + hi) / 2; if a[m] <= t { r = m; lo = m + 1 } else { hi = m - 1 } }
+        return r >= 0 ? a[r] : nil
+    }
+    /// (크기, 가로 이동, 세로 이동(아래 +), 흰색 번쩍 0~1) — 이동은 화면 너비에 대한 비율
+    func at(_ t: Double) -> (s: Double, dx: Double, dy: Double, white: Double) {
+        var s = 1.0, dx = 0.0, dy = 0.0, white = 0.0
+        if let b = BeatFx.last(beats, t) {
+            let e = t - b
+            if pulse && e < 0.5 { s = 1 + 0.035 * exp(-e / 0.12) }
+            if shake && e < 0.6 && climax.contains(where: { t >= $0[0] && t < $0[1] }) {
+                let a = 0.012 * exp(-e / 0.25)
+                dx = a * sin(2 * .pi * 7 * t)
+                dy = 0.6 * a * cos(2 * .pi * 9 * t)
+            }
+        }
+        if flash, let f = BeatFx.last(flashes, t), t - f < 0.45 { white = 0.45 * exp(-(t - f) / 0.09) }
+        return (s, dx, dy, white)
+    }
+}
+
+/// 움직임 · 색감 (app.js 의 CR.MOTION · CR.FILTERS 와 같은 값)
+enum Effects {
+    /// 사진 한 장이 보이는 동안 p(0→1) 에 따라: 크기 · 가로/세로 이동(화면 너비/높이 비율, 아래 +) · 기울기(시계 방향 °)
+    static func motion(_ m: String, _ p: Double) -> (s: Double, dx: Double, dy: Double, rot: Double) {
+        switch m {
+        case "zoomIn": return (1 + 0.12 * p, 0, 0, 0)
+        case "zoomOut": return (1.12 - 0.12 * p, 0, 0, 0)
+        case "panL": return (1.12, 0.05 - 0.10 * p, 0, 0)
+        case "panR": return (1.12, -0.05 + 0.10 * p, 0, 0)
+        case "up": return (1.12, 0, -0.04 + 0.08 * p, 0)
+        case "down": return (1.12, 0, 0.04 - 0.08 * p, 0)
+        case "tilt": return (1.1 + 0.08 * p, 0, 0, -3 + 3 * p)
+        default: return (1, 0, 0, 0)
+        }
+    }
+
+    /// CSS filter 함수와 같은 순서 · 같은 값 (화면 미리보기와 결과가 같게)
+    static let filters: [String: [(String, Double)]] = [
+        "warm": [("sepia", 0.25), ("saturate", 1.3), ("hue", -8)],
+        "cool": [("saturate", 1.1), ("hue", 18), ("brightness", 1.05)],
+        "vivid": [("saturate", 1.7), ("contrast", 1.15)],
+        "mono": [("grayscale", 1), ("contrast", 1.2)],
+        "vintage": [("sepia", 0.75), ("contrast", 0.9), ("brightness", 1.05)],
+        "film": [("contrast", 1.15), ("saturate", 0.75), ("sepia", 0.2)],
+        "faded": [("contrast", 0.8), ("brightness", 1.12), ("saturate", 0.65)],
+    ]
+
+    /// 3×3 + 더하기 (CSS Filter Effects 명세의 색 행렬)
+    struct M {
+        var m: [Double] = [1, 0, 0, 0, 1, 0, 0, 0, 1]
+        var b: [Double] = [0, 0, 0]
+        static func then(_ cur: M, _ nx: M) -> M {
+            var r = M()
+            for i in 0..<3 {
+                for j in 0..<3 { r.m[i * 3 + j] = (0..<3).reduce(0) { $0 + nx.m[i * 3 + $1] * cur.m[$1 * 3 + j] } }
+                r.b[i] = (0..<3).reduce(0) { $0 + nx.m[i * 3 + $1] * cur.b[$1] } + nx.b[i]
+            }
+            return r
+        }
+    }
+
+    static func op(_ name: String, _ a: Double) -> M {
+        var x = M()
+        switch name {
+        case "grayscale":
+            let s = 1 - min(1, a)
+            x.m = [0.2126 + 0.7874 * s, 0.7152 - 0.7152 * s, 0.0722 - 0.0722 * s,
+                   0.2126 - 0.2126 * s, 0.7152 + 0.2848 * s, 0.0722 - 0.0722 * s,
+                   0.2126 - 0.2126 * s, 0.7152 - 0.7152 * s, 0.0722 + 0.9278 * s]
+        case "sepia":
+            let s = 1 - min(1, a)
+            x.m = [0.393 + 0.607 * s, 0.769 - 0.769 * s, 0.189 - 0.189 * s,
+                   0.349 - 0.349 * s, 0.686 + 0.314 * s, 0.168 - 0.168 * s,
+                   0.272 - 0.272 * s, 0.534 - 0.534 * s, 0.131 + 0.869 * s]
+        case "saturate":
+            let s = a
+            x.m = [0.213 + 0.787 * s, 0.715 - 0.715 * s, 0.072 - 0.072 * s,
+                   0.213 - 0.213 * s, 0.715 + 0.285 * s, 0.072 - 0.072 * s,
+                   0.213 - 0.213 * s, 0.715 - 0.715 * s, 0.072 + 0.928 * s]
+        case "hue":
+            let r = a * .pi / 180, c = cos(r), s = sin(r)
+            x.m = [0.213 + c * 0.787 - s * 0.213, 0.715 - c * 0.715 - s * 0.715, 0.072 - c * 0.072 + s * 0.928,
+                   0.213 - c * 0.213 + s * 0.143, 0.715 + c * 0.285 + s * 0.140, 0.072 - c * 0.072 - s * 0.283,
+                   0.213 - c * 0.213 - s * 0.787, 0.715 - c * 0.715 + s * 0.715, 0.072 + c * 0.928 + s * 0.072]
+        case "brightness":
+            x.m = [a, 0, 0, 0, a, 0, 0, 0, a]
+        case "contrast":
+            x.m = [a, 0, 0, 0, a, 0, 0, 0, a]
+            x.b = [0.5 - 0.5 * a, 0.5 - 0.5 * a, 0.5 - 0.5 * a]
+        default: break
+        }
+        return x
+    }
+
+    static func apply(_ img: CIImage, ops: [(String, Double)]) -> CIImage {
+        if ops.isEmpty { return img }
+        var out = img
+        // CSS 는 단계마다 0~1 로 자르므로 같은 방식으로
+        for (name, a) in ops {
+            let x = op(name, a)
+            out = out.applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: CGFloat(x.m[0]), y: CGFloat(x.m[1]), z: CGFloat(x.m[2]), w: 0),
+                "inputGVector": CIVector(x: CGFloat(x.m[3]), y: CGFloat(x.m[4]), z: CGFloat(x.m[5]), w: 0),
+                "inputBVector": CIVector(x: CGFloat(x.m[6]), y: CGFloat(x.m[7]), z: CGFloat(x.m[8]), w: 0),
+                "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
+                "inputBiasVector": CIVector(x: CGFloat(x.b[0]), y: CGFloat(x.b[1]), z: CGFloat(x.b[2]), w: 0),
+            ]).applyingFilter("CIColorClamp")
+        }
+        return out
+    }
+
+    static func brightness(_ img: CIImage, _ f: CGFloat) -> CIImage {
+        img.applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": CIVector(x: f, y: 0, z: 0, w: 0),
+            "inputGVector": CIVector(x: 0, y: f, z: 0, w: 0),
+            "inputBVector": CIVector(x: 0, y: 0, z: f, w: 0),
+        ])
+    }
+
+    static func alpha(_ img: CIImage, _ a: CGFloat) -> CIImage {
+        img.applyingFilter("CIColorMatrix", parameters: ["inputAVector": CIVector(x: 0, y: 0, z: 0, w: a)])
+    }
+
+    /// 필름 색감의 어두운 가장자리 (CSS: radial-gradient(circle farthest-corner, transparent 45%, rgba(0,0,0,.6)))
+    static func vignette(_ R: CGSize) -> CIImage {
+        let half = sqrt(R.width * R.width + R.height * R.height) / 2
+        return CIFilter(name: "CIRadialGradient", parameters: [
+            "inputCenter": CIVector(x: R.width / 2, y: R.height / 2),
+            "inputRadius0": half * 0.45, "inputRadius1": half,
+            "inputColor0": CIColor(red: 0, green: 0, blue: 0, alpha: 0),
+            "inputColor1": CIColor(red: 0, green: 0, blue: 0, alpha: 0.6),
+        ])!.outputImage!.cropped(to: CGRect(origin: .zero, size: R))
+    }
+
+    /// 화면 가운데를 기준으로 크기 · 기울기 · 이동 (CSS: translate(dx, dy) rotate(rot) scale(s), 원점 = 가운데)
+    static func around(_ R: CGSize, s: Double, rotDeg: Double, dxPx: Double, dyPxDown: Double) -> CGAffineTransform {
+        let cx = R.width / 2, cy = R.height / 2
+        return CGAffineTransform(translationX: -cx, y: -cy)
+            .concatenating(CGAffineTransform(scaleX: CGFloat(s), y: CGFloat(s)))
+            .concatenating(CGAffineTransform(rotationAngle: CGFloat(-rotDeg * .pi / 180)))
+            .concatenating(CGAffineTransform(translationX: cx + CGFloat(dxPx), y: cy - CGFloat(dyPxDown)))
+    }
+}
+
 /// 프로젝트 내용 + 시간 계산
 struct Plan {
     var clips: [ClipSpec]
@@ -106,6 +276,9 @@ struct Plan {
     var texts: [TextSpec]
     var aspect: String
     var fit: String
+    var bgBlur: Bool          // 사진 뒤 흐린 배경
+    var photoFrame: Bool      // 사진 흰 액자
+    var beatFx: BeatFx
     var starts: [Double] = []
     var trans: [Double] = []   // trans[i] = 클립 i 와 i+1 사이 트랜지션 길이
     var total: Double = 0
@@ -116,6 +289,9 @@ struct Plan {
         texts = (spec["texts"] as? [[String: Any]] ?? []).map(TextSpec.init).filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         aspect = str(spec, "aspect", "16:9")
         fit = str(spec, "fit", "fit")
+        bgBlur = (spec["bgBlur"] as? Bool) ?? false
+        photoFrame = (spec["photoFrame"] as? Bool) ?? false
+        beatFx = BeatFx(spec["beatFx"] as? [String: Any])
         timing()
     }
 
@@ -165,11 +341,16 @@ final class Layer {
     let orientation: CGImagePropertyOrientation
     let userRotate: CGImagePropertyOrientation?
     let start: Double, end: Double, fadeIn: Double, fadeOut: Double, blur: Double
-    init(trackID: CMPersistentTrackID, sourceRotation: Int, userRotation: Int, start: Double, end: Double, fadeIn: Double, fadeOut: Double, blur: Double) {
+    let imagePath: String?     // 사진 클립이면 사진 파일
+    let motion: String
+    let filter: String
+    init(trackID: CMPersistentTrackID, sourceRotation: Int, userRotation: Int, start: Double, end: Double,
+         fadeIn: Double, fadeOut: Double, blur: Double, imagePath: String?, motion: String, filter: String) {
         self.trackID = trackID
         self.orientation = Layer.orient(sourceRotation) ?? .up
         self.userRotate = Layer.orient(userRotation)
         self.start = start; self.end = end; self.fadeIn = fadeIn; self.fadeOut = fadeOut; self.blur = blur
+        self.imagePath = imagePath; self.motion = motion; self.filter = filter
     }
     static func orient(_ deg: Int) -> CGImagePropertyOrientation? {
         switch deg {
@@ -185,22 +366,39 @@ final class Layer {
         if fadeOut > 0, t > end - fadeOut { f = min(f, (end - t) / fadeOut) }
         return min(1, max(0, f))
     }
+    func progress(_ t: Double) -> Double { end > start ? min(1, max(0, (t - start) / (end - start))) : 0 }
 }
 
 final class RenderShared {
     let renderSize: CGSize
     let fill: Bool
+    let bgBlur: Bool
+    let photoFrame: Bool
     let texts: [TextSpec]
+    let beatFx: BeatFx
     private var cache: [Int: CIImage] = [:]
+    private var images: [String: CIImage] = [:]
     private let lock = NSLock()
-    init(renderSize: CGSize, fill: Bool, texts: [TextSpec]) {
-        self.renderSize = renderSize; self.fill = fill; self.texts = texts
+    init(renderSize: CGSize, fill: Bool, bgBlur: Bool, photoFrame: Bool, texts: [TextSpec], beatFx: BeatFx) {
+        self.renderSize = renderSize; self.fill = fill; self.bgBlur = bgBlur; self.photoFrame = photoFrame
+        self.texts = texts; self.beatFx = beatFx
     }
     func textImage(_ i: Int) -> CIImage? {
         lock.lock(); defer { lock.unlock() }
         if let c = cache[i] { return c }
         let img = TextArt.make(texts[i], renderSize: renderSize)
         if let img = img { cache[i] = img }
+        return img
+    }
+    /// 사진은 결과 크기에 알맞게 줄여서 한 번만 읽어요 (사진이 아주 커도 빠르게)
+    func image(_ path: String) -> CIImage? {
+        lock.lock(); defer { lock.unlock() }
+        if let c = images[path] { return c }
+        let side = Int(max(renderSize.width, renderSize.height) * 1.3)
+        guard let cg = Photos.cgImage(path, maxSide: side) else { return nil }
+        let img = CIImage(cgImage: cg)
+        if images.count > 6 { images.removeAll() }   // 메모리를 아끼려고 조금만 기억해요
+        images[path] = img
         return img
     }
 }
@@ -260,39 +458,65 @@ final class Compositor: NSObject, AVVideoCompositing {
 
     func cancelAllPendingVideoCompositionRequests() {}
 
+    /// 한 장면: 클립(들) → 트랜지션 → 박자 효과 → 글자.  app.js 의 Player.draw() 와 같은 순서 · 같은 값
     static func frame(_ request: AVAsynchronousVideoCompositionRequest, _ ins: Instruction) -> CIImage {
         let R = request.renderContext.size
         let full = CGRect(origin: .zero, size: R)
         let black = CIImage(color: CIColor(red: 0, green: 0, blue: 0)).cropped(to: full)
+        let white = CIImage(color: CIColor(red: 1, green: 1, blue: 1)).cropped(to: full)
         let t = request.compositionTime.seconds
+        let sh = ins.shared
+        let minSide = Double(min(R.width, R.height))
 
         func layerImage(_ L: Layer) -> CIImage {
-            guard let pb = request.sourceFrame(byTrackID: L.trackID) else { return black }
-            var img = CIImage(cvPixelBuffer: pb).oriented(L.orientation)
+            var img: CIImage
+            let isImage = L.imagePath != nil
+            if let p = L.imagePath {
+                guard let im = sh.image(p) else { return black }
+                img = im
+            } else {
+                guard let pb = request.sourceFrame(byTrackID: L.trackID) else { return black }
+                img = CIImage(cvPixelBuffer: pb).oriented(L.orientation)
+            }
             if let r = L.userRotate { img = img.oriented(r) }
             img = img.transformed(by: CGAffineTransform(translationX: -img.extent.minX, y: -img.extent.minY))
             let w = img.extent.width, h = img.extent.height
             guard w > 0, h > 0 else { return black }
-            let s = ins.shared.fill ? max(R.width / w, R.height / h) : min(R.width / w, R.height / h)
+            let framed = isImage && sh.photoFrame
+            let k: CGFloat = framed ? 0.86 : 1
+            let s = (sh.fill ? max(R.width / w, R.height / h) : min(R.width / w, R.height / h)) * k
             let nw = w * s, nh = h * s
-            img = img.transformed(by: CGAffineTransform(scaleX: s, y: s))
-                .transformed(by: CGAffineTransform(translationX: (R.width - nw) / 2, y: (R.height - nh) / 2))
-            let rect = CGRect(x: (R.width - nw) / 2, y: (R.height - nh) / 2, width: nw, height: nh).intersection(full)
+            let x0 = (R.width - nw) / 2, y0 = (R.height - nh) / 2
+            var content = img.transformed(by: CGAffineTransform(scaleX: s, y: s).concatenating(CGAffineTransform(translationX: x0, y: y0)))
+                .cropped(to: CGRect(x: x0, y: y0, width: nw, height: nh))
+            if framed {
+                let b = CGFloat(0.012 * minSide)
+                let border = white.cropped(to: CGRect(x: x0 - b, y: y0 - b, width: nw + 2 * b, height: nh + 2 * b))
+                content = content.composited(over: border)
+            }
+            let mo = Effects.motion(L.motion, L.progress(t))
+            if mo.s != 1 || mo.dx != 0 || mo.dy != 0 || mo.rot != 0 {
+                content = content.transformed(by: Effects.around(R, s: mo.s, rotDeg: mo.rot, dxPx: mo.dx * Double(R.width), dyPxDown: mo.dy * Double(R.height)))
+            }
+            var layer = content
+            // 사진이 화면을 다 채우지 못하면 뒤를 같은 사진을 흐리게 키워서 채워요
+            if isImage && sh.bgBlur && !sh.fill {
+                let cs = max(R.width / w, R.height / h) * 1.1
+                let bg = img.transformed(by: CGAffineTransform(scaleX: cs, y: cs)
+                    .concatenating(CGAffineTransform(translationX: (R.width - w * cs) / 2, y: (R.height - h * cs) / 2)))
+                    .clampedToExtent().applyingGaussianBlur(sigma: 0.04 * minSide).cropped(to: full)
+                layer = content.composited(over: Effects.brightness(bg, 0.75))
+            }
+            layer = layer.cropped(to: full)
             if L.blur > 0.01 {
-                let sigma = L.blur * Double(min(R.width, R.height)) / 1080.0
-                img = img.clampedToExtent().applyingGaussianBlur(sigma: sigma).cropped(to: rect)
-            } else {
-                img = img.cropped(to: rect)
+                let rect = layer.extent
+                layer = layer.clampedToExtent().applyingGaussianBlur(sigma: L.blur * minSide / 1080.0).cropped(to: rect)
             }
+            if let ops = Effects.filters[L.filter] { layer = Effects.apply(layer, ops: ops) }
+            if L.filter == "film" { layer = Effects.vignette(R).composited(over: layer) }
             let f = CGFloat(L.fade(at: t))
-            if f < 0.999 {
-                img = img.applyingFilter("CIColorMatrix", parameters: [
-                    "inputRVector": CIVector(x: f, y: 0, z: 0, w: 0),
-                    "inputGVector": CIVector(x: 0, y: f, z: 0, w: 0),
-                    "inputBVector": CIVector(x: 0, y: 0, z: f, w: 0),
-                ])
-            }
-            return img.composited(over: black)
+            if f < 0.999 { layer = Effects.brightness(layer, f) }
+            return layer.composited(over: black)
         }
 
         var out = black
@@ -300,29 +524,65 @@ final class Compositor: NSObject, AVVideoCompositing {
             let a = layerImage(ins.layers[0])
             let b = layerImage(ins.layers[1])
             let p = CGFloat(min(1, max(0, ins.tDur > 0 ? (t - ins.tStart) / ins.tDur : 1)))
+            let cx = R.width / 2, cy = R.height / 2
+            func scaled(_ im: CIImage, _ s: CGFloat, rot: CGFloat = 0) -> CIImage {
+                im.transformed(by: CGAffineTransform(translationX: -cx, y: -cy)
+                    .concatenating(CGAffineTransform(scaleX: s, y: s))
+                    .concatenating(CGAffineTransform(rotationAngle: rot))
+                    .concatenating(CGAffineTransform(translationX: cx, y: cy)))
+            }
             switch tr {
             case "fadeblack":
-                let f = p < 0.5 ? 1 - p * 2 : p * 2 - 1
-                let src = p < 0.5 ? a : b
-                out = src.applyingFilter("CIColorMatrix", parameters: [
-                    "inputRVector": CIVector(x: f, y: 0, z: 0, w: 0),
-                    "inputGVector": CIVector(x: 0, y: f, z: 0, w: 0),
-                    "inputBVector": CIVector(x: 0, y: 0, z: f, w: 0),
-                ])
+                out = p < 0.5 ? Effects.brightness(a, 1 - p * 2) : Effects.brightness(b, p * 2 - 1)
+            case "flash":
+                out = p < 0.5 ? Effects.alpha(white, p * 2).composited(over: a) : Effects.alpha(white, (1 - p) * 2).composited(over: b)
             case "wipe":
                 out = b.cropped(to: CGRect(x: 0, y: 0, width: R.width * p, height: R.height)).composited(over: a)
             case "slide":
                 let movedA = a.transformed(by: CGAffineTransform(translationX: -R.width * p, y: 0))
                 let movedB = b.transformed(by: CGAffineTransform(translationX: R.width * (1 - p), y: 0))
-                out = movedB.composited(over: movedA).composited(over: black)
+                out = movedB.composited(over: movedA)
+            case "circle":
+                let r = p * sqrt(R.width * R.width + R.height * R.height) / 2
+                let mask = CIFilter(name: "CIRadialGradient", parameters: [
+                    "inputCenter": CIVector(x: cx, y: cy), "inputRadius0": r, "inputRadius1": r + 1,
+                    "inputColor0": CIColor(red: 1, green: 1, blue: 1), "inputColor1": CIColor(red: 0, green: 0, blue: 0),
+                ])!.outputImage!.cropped(to: full)
+                out = b.applyingFilter("CIBlendWithMask", parameters: [kCIInputBackgroundImageKey: a, kCIInputMaskImageKey: mask])
+            case "zoom":
+                out = Effects.alpha(scaled(b, 1.3 - 0.3 * p), p).composited(over: scaled(a, 1 + 0.5 * p))
+            case "spin":
+                out = Effects.alpha(scaled(b, 0.6 + 0.4 * p, rot: 30 * (1 - p) * .pi / 180), p).composited(over: a)
+            case "blur":
+                let mb = 0.03 * minSide
+                let ba = p > 0.001 ? a.clampedToExtent().applyingGaussianBlur(sigma: mb * Double(p)).cropped(to: full) : a
+                let bb = p < 0.999 ? b.clampedToExtent().applyingGaussianBlur(sigma: mb * Double(1 - p)).cropped(to: full) : b
+                out = Effects.alpha(bb, p).composited(over: ba)
+            case "blinds":
+                let sw = R.width / 10
+                var mask = black
+                for k in 0..<10 {
+                    mask = white.cropped(to: CGRect(x: CGFloat(k) * sw, y: 0, width: sw * p, height: R.height)).composited(over: mask)
+                }
+                out = b.applyingFilter("CIBlendWithMask", parameters: [kCIInputBackgroundImageKey: a, kCIInputMaskImageKey: mask])
             default: // dissolve
-                out = b.applyingFilter("CIColorMatrix", parameters: ["inputAVector": CIVector(x: 0, y: 0, z: 0, w: p)]).composited(over: a)
+                out = Effects.alpha(b, p).composited(over: a)
             }
+            out = out.cropped(to: full).composited(over: black)
         } else if let L = ins.layers.first {
             out = layerImage(L)
         }
-        for (i, x) in ins.shared.texts.enumerated() where t >= x.start && t < x.end {
-            if let img = ins.shared.textImage(i) { out = img.composited(over: out) }
+        // 박자 효과: 펄스(살짝 커짐) · 흔들림 · 번쩍
+        if sh.beatFx.any {
+            let fx = sh.beatFx.at(t)
+            if fx.s != 1 || fx.dx != 0 || fx.dy != 0 {
+                out = out.transformed(by: Effects.around(R, s: fx.s, rotDeg: 0, dxPx: fx.dx * Double(R.width), dyPxDown: fx.dy * Double(R.width)))
+                    .cropped(to: full).composited(over: black)
+            }
+            if fx.white > 0.001 { out = Effects.alpha(white, CGFloat(fx.white)).composited(over: out) }
+        }
+        for (i, x) in sh.texts.enumerated() where t >= x.start && t < x.end {
+            if let img = sh.textImage(i) { out = img.composited(over: out) }
         }
         return out.cropped(to: full)
     }
@@ -383,11 +643,12 @@ enum TextArt {
         }
         guard let cg = ctx.makeImage() else { return nil }
         let margin = R.height * 0.07
-        let x0 = ((R.width - CGFloat(iw)) / 2).rounded()
+        var x0 = ((R.width - CGFloat(iw)) / 2).rounded()
         let y0: CGFloat
         switch x.pos {
         case "top": y0 = R.height - CGFloat(ih) - margin
         case "center": y0 = (R.height - CGFloat(ih)) / 2
+        case "br": y0 = margin * 0.6; x0 = (R.width - CGFloat(iw) - R.width * 0.04).rounded()
         default: y0 = margin
         }
         return CIImage(cgImage: cg).transformed(by: CGAffineTransform(translationX: x0, y: y0.rounded()))
@@ -411,6 +672,44 @@ final class Built {
 }
 
 enum Builder {
+    /// 사진 클립 밑에 까는 검은 바탕 영상 (64×64, 10초) — 처음 한 번 만들어서 cache 에 둬요
+    static let baseLock = NSLock()
+    static func baseTrack() throws -> AVAssetTrack {
+        baseLock.lock(); defer { baseLock.unlock() }
+        try? FileManager.default.createDirectory(at: Paths.cache, withIntermediateDirectories: true)
+        let url = Paths.cache.appendingPathComponent("base-v1.mov")
+        if !FileManager.default.fileExists(atPath: url.path) {
+            let tmp = Paths.cache.appendingPathComponent("base-v1.\(getpid()).tmp.mov")
+            try? FileManager.default.removeItem(at: tmp)
+            let w = try AVAssetWriter(outputURL: tmp, fileType: .mov)
+            let input = AVAssetWriterInput(mediaType: .video, outputSettings: [AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 64, AVVideoHeightKey: 64])
+            let ad = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA, kCVPixelBufferWidthKey as String: 64, kCVPixelBufferHeightKey as String: 64])
+            w.add(input)
+            guard w.startWriting() else { throw RenderError("사진용 바탕을 만들지 못했어요") }
+            w.startSession(atSourceTime: .zero)
+            for f in 0..<300 {
+                while !input.isReadyForMoreMediaData { usleep(1000) }
+                var pb: CVPixelBuffer?
+                if let pool = ad.pixelBufferPool { CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pb) }
+                guard let b = pb else { throw RenderError("사진용 바탕을 만들지 못했어요") }
+                CVPixelBufferLockBaseAddress(b, [])
+                memset(CVPixelBufferGetBaseAddress(b), 0, CVPixelBufferGetDataSize(b))
+                CVPixelBufferUnlockBaseAddress(b, [])
+                ad.append(b, withPresentationTime: CMTime(value: CMTimeValue(f), timescale: 30))
+            }
+            input.markAsFinished()
+            let sem = DispatchSemaphore(value: 0)
+            w.finishWriting { sem.signal() }
+            sem.wait()
+            guard w.status == .completed else { throw RenderError("사진용 바탕을 만들지 못했어요") }
+            try? FileManager.default.removeItem(at: url)
+            try FileManager.default.moveItem(at: tmp, to: url)
+        }
+        guard let t = AVURLAsset(url: url).tracks(withMediaType: .video).first else { throw RenderError("사진용 바탕을 읽지 못했어요") }
+        return t
+    }
+
     /// 트랙 끝이 `at` 보다 뒤라면(반올림 오차) 잘라내고, 앞이라면 빈 구간을 넣어서 정확히 `at` 에 붙여요
     static func place(_ track: AVMutableCompositionTrack, at: CMTime) {
         let end = track.timeRange.end
@@ -470,6 +769,21 @@ enum Builder {
         var shortSide = 1080
         var clipAudioOn: [Int: Bool] = [:]
         for (i, c) in plan.clips.enumerated() {
+            if c.isImage {
+                // 사진: 장면 수만 맞춰 주는 검은 바탕 영상을 깔고, 그림은 Compositor 가 사진 파일에서 그려요
+                guard FileManager.default.fileExists(atPath: c.path) else {
+                    throw RenderError("파일을 찾을 수 없어요: \(URL(fileURLWithPath: c.path).lastPathComponent)")
+                }
+                if i == 0 { shortSide = Int(min(c.w > 0 ? c.w : 1080, c.h > 0 ? c.h : 1080)) }
+                if includeVideo {
+                    let base = try baseTrack()
+                    let vt = vTrack(i)
+                    try insert(vt, from: base, inT: 0, outT: base.timeRange.end.seconds, at: plan.starts[i], dur: c.dur)
+                    layers.append(Layer(trackID: vt.trackID, sourceRotation: 0, userRotation: c.rotate, start: plan.starts[i], end: plan.end(i),
+                                        fadeIn: c.fadeIn, fadeOut: c.fadeOut, blur: c.blur, imagePath: c.path, motion: c.motion, filter: c.filter))
+                }
+                continue
+            }
             let a = try asset(c.path)
             guard let sv = a.tracks(withMediaType: .video).first else {
                 throw RenderError("영상이 없는 파일이에요: \(URL(fileURLWithPath: c.path).lastPathComponent)")
@@ -485,7 +799,8 @@ enum Builder {
                 let vt = vTrack(i)
                 try insert(vt, from: sv, inT: c.inT, outT: c.outT, at: plan.starts[i], dur: c.dur)
                 layers.append(Layer(trackID: vt.trackID, sourceRotation: Media.rotation(sv.preferredTransform), userRotation: c.rotate,
-                                    start: plan.starts[i], end: plan.end(i), fadeIn: c.fadeIn, fadeOut: c.fadeOut, blur: c.blur))
+                                    start: plan.starts[i], end: plan.end(i), fadeIn: c.fadeIn, fadeOut: c.fadeOut, blur: c.blur,
+                                    imagePath: nil, motion: c.motion, filter: c.filter))
             }
             if c.volume > 0, let sa = a.tracks(withMediaType: .audio).first {
                 try insert(aTrack(i), from: sa, inT: c.inT, outT: c.outT, at: plan.starts[i], dur: c.dur)
@@ -558,7 +873,8 @@ enum Builder {
         let renderSize = plan.renderSize(preset: preset, fallbackShortSide: shortSide)
         var vc: AVMutableVideoComposition?
         if includeVideo {
-            let shared = RenderShared(renderSize: renderSize, fill: plan.fit == "fill" || preset == "vertical", texts: plan.texts)
+            let shared = RenderShared(renderSize: renderSize, fill: plan.fit == "fill" || preset == "vertical", bgBlur: plan.bgBlur,
+                                      photoFrame: plan.photoFrame, texts: plan.texts, beatFx: plan.beatFx)
             var ins: [Instruction] = []
             let compEnd = comp.duration
             func add(_ s: Double, _ e: Double, _ ls: [Layer], _ tr: String?, _ ts: Double, _ td: Double) {

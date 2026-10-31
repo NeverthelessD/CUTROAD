@@ -222,8 +222,15 @@ final class Bridge: NSObject, WKScriptMessageHandlerWithReply {
         // 오래 걸리는 일은 뒤에서 하고, 답은 언제나 메인 스레드에서 보내요
         let reply: ([String: Any]) -> Void = { v in DispatchQueue.main.async { replyHandler(v, nil) } }
         switch type {
-        case "open": app.openFiles(reply: reply)
-        case "chooseFolder": app.chooseFolder(start: body["start"] as? String, reply: reply)
+        case "open": app.openFiles(kind: body["kind"] as? String ?? "", reply: reply)
+        case "chooseFolder": app.chooseFolder(start: body["start"] as? String, purpose: body["purpose"] as? String ?? "", reply: reply)
+        case "scanPhotos":
+            let dir = body["path"] as? String ?? ""
+            let rec = body["recursive"] as? Bool ?? true
+            DispatchQueue.global(qos: .userInitiated).async { reply(["paths": Photos.scan(dir, recursive: rec)]) }
+        case "beats":
+            let path = body["path"] as? String ?? ""
+            DispatchQueue.global(qos: .userInitiated).async { reply(Beats.analyze(path)) }
         case "reveal":
             if let p = body["path"] as? String { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: p)]) }
             reply(["ok": true])
@@ -232,7 +239,7 @@ final class Bridge: NSObject, WKScriptMessageHandlerWithReply {
             reply(["ok": true])
         case "probe":
             let paths = body["paths"] as? [String] ?? []
-            DispatchQueue.global(qos: .userInitiated).async { reply(["items": paths.map { Media.probe($0) }]) }
+            DispatchQueue.global(qos: .userInitiated).async { reply(["items": Media.probeAll(paths)]) }
         case "thumbs":
             let path = body["path"] as? String ?? ""
             let height = body["height"] as? Double ?? 90
@@ -517,28 +524,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     // MARK: 파일 고르기
 
-    func openFiles(reply: @escaping ([String: Any]) -> Void) {
+    func openFiles(kind: String, reply: @escaping ([String: Any]) -> Void) {
         let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = true
+        let audio = kind == "audio" || kind == "music"
+        panel.allowsMultipleSelection = kind != "music"
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
-        panel.allowedContentTypes = Media.allowedExtensions.compactMap { UTType(filenameExtension: $0) }
-        panel.message = "가져올 영상이나 소리 파일을 골라 주세요 (MOV · MP4 · MP3 · WAV · M4A)"
-        panel.prompt = "가져오기"
+        panel.allowedContentTypes = (audio ? Media.audioExtensions : Media.allowedExtensions).compactMap { UTType(filenameExtension: $0) }
+        panel.message = audio ? "배경음악으로 쓸 소리 파일을 골라 주세요 (MP3 · WAV · M4A)"
+            : "가져올 영상 · 소리 · 사진을 골라 주세요 (MOV · MP4 · MP3 · WAV · M4A · JPG · PNG · HEIC)"
+        panel.prompt = audio ? "고르기" : "가져오기"
         showMain()
         panel.beginSheetModal(for: window) { r in
             reply(["paths": r == .OK ? panel.urls.map { $0.path } : []])
         }
     }
 
-    func chooseFolder(start: String?, reply: @escaping ([String: Any]) -> Void) {
+    func chooseFolder(start: String?, purpose: String, reply: @escaping ([String: Any]) -> Void) {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
-        panel.canCreateDirectories = true
-        panel.prompt = "이 폴더에 저장"
-        panel.message = "내보낸 파일을 저장할 폴더를 골라 주세요"
+        let photos = purpose == "photos"
+        panel.canCreateDirectories = !photos
+        panel.prompt = photos ? "이 폴더의 사진 쓰기" : "이 폴더에 저장"
+        panel.message = photos ? "영상으로 만들 사진이 들어 있는 폴더를 골라 주세요" : "내보낸 파일을 저장할 폴더를 골라 주세요"
         if let s = start { panel.directoryURL = URL(fileURLWithPath: s, isDirectory: true) }
         showMain()
         panel.beginSheetModal(for: window) { r in
@@ -639,6 +649,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         main.addItem(fileItem)
         let file = NSMenu(title: "파일")
         file.addItem(item("새 프로젝트", "new", "n"))
+        file.addItem(item("사진으로 영상 만들기…", "automake", "n", [.command, .shift]))
         file.addItem(item("처음 화면", "home", "o"))
         file.addItem(NSMenuItem.separator())
         file.addItem(item("가져오기…", "import", "i"))

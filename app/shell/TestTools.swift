@@ -52,6 +52,49 @@ enum TestTools {
                   let dest = CGImageDestinationCreateWithURL(URL(fileURLWithPath: a[2]) as CFURL, "public.png" as CFString, 1, nil) else { return 1 }
             CGImageDestinationAddImage(dest, img, nil)
             return CGImageDestinationFinalize(dest) ? 0 : 1
+        case "--test-photos":
+            // 시험 사진: 번호가 적힌 색 사진 n장 (3장마다 세로 사진 1장), JPG · PNG 섞어서
+            guard a.count >= 2, let n = Int(a[1]) else { return 2 }
+            try? FileManager.default.createDirectory(atPath: a[0], withIntermediateDirectories: true)
+            for i in 0..<n {
+                let portrait = i % 3 == 2
+                let w = portrait ? 600 : 1200, h = portrait ? 900 : 800
+                guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return 1 }
+                let hue = CGFloat(i) / CGFloat(max(1, n))
+                let c = NSColor(hue: hue, saturation: 0.55, brightness: 0.85, alpha: 1).cgColor
+                ctx.setFillColor(c); ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+                ctx.setFillColor(CGColor(gray: 1, alpha: 0.85)); ctx.fill(CGRect(x: 0, y: 0, width: w, height: h / 5))
+                let font = CTFontCreateWithName("Menlo-Bold" as CFString, CGFloat(h) * 0.35, nil)
+                if let str = CFAttributedStringCreate(nil, "\(i + 1)" as CFString, [kCTFontAttributeName: font, kCTForegroundColorAttributeName: CGColor(gray: 1, alpha: 1)] as CFDictionary) {
+                    ctx.textPosition = CGPoint(x: CGFloat(w) * 0.3, y: CGFloat(h) * 0.35)
+                    CTLineDraw(CTLineCreateWithAttributedString(str), ctx)
+                }
+                guard let img = ctx.makeImage() else { return 1 }
+                let png = i % 4 == 3
+                let url = URL(fileURLWithPath: a[0]).appendingPathComponent(String(format: "사진%02d.%@", i + 1, png ? "png" : "jpg"))
+                guard let dest = CGImageDestinationCreateWithURL(url as CFURL, (png ? "public.png" : "public.jpeg") as CFString, 1, nil) else { return 1 }
+                CGImageDestinationAddImage(dest, img, nil)
+                if !CGImageDestinationFinalize(dest) { return 1 }
+            }
+            print("ok"); return 0
+        case "--test-clicks":
+            // 시험 음악: bpm 박자마다 '딱' 소리 (4박마다 더 크게), 가운데 1/3 은 더 크게
+            guard a.count >= 3, let bpm = Double(a[1]), let secs = Double(a[2]) else { return 2 }
+            do { try clicks(URL(fileURLWithPath: a[0]), bpm: bpm, seconds: secs); print("ok"); return 0 } catch { return 1 }
+        case "--test-beats":
+            guard let p = a.first else { return 2 }
+            let r = Beats.analyze(p)
+            out(["bpm": r["bpm"] ?? 0, "beats": (r["beats"] as? [Double])?.count ?? 0, "first": Array(((r["beats"] as? [Double]) ?? []).prefix(6)),
+                 "downbeats": (r["downbeats"] as? [Double])?.count ?? 0, "climax": r["climax"] ?? [], "error": r["error"] ?? ""])
+            return r["error"] == nil ? 0 : 1
+        case "--test-scan":
+            guard let p = a.first else { return 2 }
+            let paths = Photos.scan(p, recursive: true)
+            let items = Media.probeAll(paths)
+            out(["count": paths.count, "ok": items.filter { $0["error"] == nil && $0["preview"] != nil }.count,
+                 "portrait": items.filter { (($0["height"] as? Int) ?? 0) > (($0["width"] as? Int) ?? 0) }.count])
+            return paths.isEmpty ? 1 : 0
         case "--test-export":
             guard let p = a.first, let d = try? Data(contentsOf: URL(fileURLWithPath: p)),
                   let spec = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { print("spec 을 읽지 못했어요"); return 2 }
@@ -135,6 +178,35 @@ enum TestTools {
         ex.exportAsynchronously { sem2.signal() }
         sem2.wait()
         guard ex.status == .completed else { throw RenderError("시험 영상을 합치지 못했어요: \(ex.error?.localizedDescription ?? "")") }
+    }
+
+    static func clicks(_ url: URL, bpm: Double, seconds: Double) throws {
+        let rate = 44100
+        let n = Int(seconds * Double(rate))
+        var samples = [Int16](repeating: 0, count: n)
+        let period = 60 / bpm
+        var k = 0
+        var t0 = 0.25
+        while t0 < seconds {
+            let loud = (t0 > seconds / 3 && t0 < seconds * 2 / 3) ? 1.0 : 0.6
+            let amp = (k % 4 == 0 ? 1.0 : 0.55) * loud * 20000
+            let s0 = Int(t0 * Double(rate))
+            for i in 0..<Int(0.06 * Double(rate)) where s0 + i < n {
+                let tt = Double(i) / Double(rate)
+                let v = sin(2 * .pi * (k % 4 == 0 ? 1200 : 800) * tt) * exp(-tt * 60) + 0.3 * sin(2 * .pi * 90 * tt) * exp(-tt * 25)
+                samples[s0 + i] = Int16(max(-32767, min(32767, v * amp)))
+            }
+            k += 1
+            t0 += period
+        }
+        var data = Data()
+        func u32(_ v: UInt32) { var x = v.littleEndian; data.append(Data(bytes: &x, count: 4)) }
+        func u16(_ v: UInt16) { var x = v.littleEndian; data.append(Data(bytes: &x, count: 2)) }
+        data.append("RIFF".data(using: .ascii)!); u32(UInt32(36 + n * 2)); data.append("WAVE".data(using: .ascii)!)
+        data.append("fmt ".data(using: .ascii)!); u32(16); u16(1); u16(1); u32(UInt32(rate)); u32(UInt32(rate * 2)); u16(2); u16(16)
+        data.append("data".data(using: .ascii)!); u32(UInt32(n * 2))
+        samples.withUnsafeBufferPointer { data.append(Data(buffer: $0)) }
+        try data.write(to: url)
     }
 
     /// 16비트 모노 48kHz WAV (quietFrom~quietTo 초는 조용)

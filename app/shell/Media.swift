@@ -8,8 +8,9 @@ import ImageIO
 import UniformTypeIdentifiers
 
 enum Media {
-    /// 가져올 수 있는 파일 (사용자 요청: mov · mp4 · mp3 · wav · m4a)
-    static let allowedExtensions = ["mov", "mp4", "mp3", "wav", "m4a"]
+    /// 가져올 수 있는 파일 (사용자 요청: mov · mp4 · mp3 · wav · m4a, 1.1: 사진 jpg · png · heic)
+    static let allowedExtensions = ["mov", "mp4", "mp3", "wav", "m4a"] + Photos.extensions
+    static let audioExtensions = ["mp3", "wav", "m4a"]
     static let videoExtensions = ["mov", "mp4"]
 
     static func asset(_ path: String) -> AVURLAsset {
@@ -30,16 +31,25 @@ enum Media {
         return r
     }
 
+    /// 여러 파일 정보 (사진은 여러 코어로 한꺼번에)
+    static func probeAll(_ paths: [String]) -> [[String: Any]] {
+        let photos = paths.filter { Photos.extensions.contains(URL(fileURLWithPath: $0).pathExtension.lowercased()) }
+        var pm: [String: [String: Any]] = [:]
+        for (p, r) in zip(photos, Photos.probeAll(photos)) { pm[p] = r }
+        return paths.map { pm[$0] ?? probe($0) }
+    }
+
     static func probe(_ path: String) -> [String: Any] {
         let url = URL(fileURLWithPath: path)
         let ext = url.pathExtension.lowercased()
+        if Photos.extensions.contains(ext) && FileManager.default.fileExists(atPath: path) { return Photos.probe(path) }
         var out: [String: Any] = ["path": path, "name": url.lastPathComponent]
         guard FileManager.default.fileExists(atPath: path) else {
             out["error"] = "파일을 찾을 수 없어요"
             return out
         }
         guard allowedExtensions.contains(ext) else {
-            out["error"] = "지원하지 않는 파일이에요 (MOV · MP4 · MP3 · WAV · M4A)"
+            out["error"] = "지원하지 않는 파일이에요 (MOV · MP4 · MP3 · WAV · M4A · JPG · PNG · HEIC)"
             return out
         }
         let a = asset(path)

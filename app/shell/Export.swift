@@ -257,6 +257,7 @@ enum Exporter {
     // MARK: 컷 편집만 — 원래 화질 그대로 (다시 인코딩하지 않음)
 
     static func writeQuick(_ plan: Plan, to url: URL, job: Job) throws -> String {
+        if plan.clips.contains(where: { $0.isImage }) { return try reencodeQuick(plan, to: url, job: job, firstSize: nil) }
         let comp = AVMutableComposition()
         guard let vt = comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
             throw RenderError("영상을 준비하지 못했어요")
@@ -307,9 +308,15 @@ enum Exporter {
             Log.write("원본 그대로 저장이 안 돼서 다시 만들어요: \(session.error?.localizedDescription ?? "")")
             try? FileManager.default.removeItem(at: url)
         }
-        // 원본 형식이 MP4 에 그대로 담기지 않으면(예: 일부 MOV 의 무압축 소리) 원본 크기로 다시 만들어요
+        return try reencodeQuick(plan, to: url, job: job, firstSize: firstSize)
+    }
+
+    /// 원본 형식이 MP4 에 그대로 담기지 않거나(예: 일부 MOV 의 무압축 소리) 사진이 섞여 있으면 원본 크기로 다시 만들어요
+    static func reencodeQuick(_ plan: Plan, to url: URL, job: Job, firstSize: CGSize?) throws -> String {
         var p = plan
-        let r = firstSize.height > 0 ? firstSize.width / firstSize.height : 16.0 / 9.0
+        var fs = firstSize ?? CGSize(width: 1920, height: 1080)
+        if firstSize == nil, let c = plan.clips.first, c.isImage, c.w > 0, c.h > 0 { fs = CGSize(width: c.w, height: c.h) }
+        let r = fs.height > 0 ? fs.width / fs.height : 16.0 / 9.0
         p.aspect = r > 1.2 ? "16:9" : (r < 0.8 ? "9:16" : "1:1")
         p.fit = "fit"
         job.set(progress: 0, message: "MP4로 다시 만드는 중")

@@ -21,7 +21,7 @@ xcrun swiftc --version
 xcrun swiftc -O -target arm64-apple-macos12.0 \
   -o "$APP/Contents/MacOS/CUTROAD" "$ROOT"/app/shell/*.swift \
   -framework AppKit -framework WebKit -framework AVFoundation -framework CoreImage -framework CoreText \
-  -framework Speech -framework ImageIO -framework UniformTypeIdentifiers -framework CryptoKit
+  -framework Speech -framework Accelerate -framework ImageIO -framework UniformTypeIdentifiers -framework CryptoKit
 chmod 755 "$APP/Contents/MacOS/CUTROAD"
 
 sed "s/__VERSION__/$VERSION/g" "$ROOT/app/Info.plist" > "$APP/Contents/Info.plist"
