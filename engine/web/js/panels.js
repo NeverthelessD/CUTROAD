@@ -223,7 +223,8 @@ CR.renderBanner = function () {
   if (!info || !CR.P || !CR.P.auto) return;
   const note = { short: ' · 사진이 적어서 음악을 ' + CR.short(info.end) + '에서 줄였어요', many: ' · 사진이 많아서 아주 빠르게 넘어가요', fit: ' · 사진이 많아서 음악 전체에 맞췄어요' }[info.note] || '';
   CR.put(b, h('div', { class: 'autobanner' }, I('check'),
-    h('b', null, '사진 ' + info.n + '장을 ‘' + info.music + '’ 박자에 맞춰 놓았어요'),
+    h('b', null, '사진 ' + info.n + '장을 ‘' + info.music + '’ 흐름에 맞춰 편집했어요'),
+    info.flow ? h('span', { class: 'sub' }, '· ' + info.flow) : null,
     h('span', { class: 'sub' }, '· ' + CR.short(info.total) + ' · ' + (info.bpm ? Math.round(info.bpm) + ' BPM · ' : '') + '넘기기 ' + info.trans + '곳' + note),
     h('div', { class: 'grow' }),
     h('button', { class: 'btn', style: { height: '30px' }, onclick: () => CR.reshuffle() }, I('refresh'), '효과 다시 섞기'),
@@ -387,7 +388,10 @@ CR.inspectClip = function (body, c) {
       numBox('인', c.fadeIn, '초', (v) => CR.edit('페이드 인', () => { c.fadeIn = CR.round(Math.min(v, CR.dur(c)), 2); }), { max: 10 }),
       numBox('아웃', c.fadeOut, '초', (v) => CR.edit('페이드 아웃', () => { c.fadeOut = CR.round(Math.min(v, CR.dur(c)), 2); }), { max: 10 }))),
     !isImg ? field('속도', null, segPick([[0.5, '0.5×'], [1, '1×'], [1.5, '1.5×'], [2, '2×']], c.speed, (v) => CR.edit('속도', () => { c.speed = v; }), 'mono')) : null,
+    c.role ? h('p', { class: 'hint' }, (CR.SECTION_NAMES[c.role.sec] || '') + ' 구간' + (c.role.burst ? ' · 몰아치기 컷' : '') + '에 놓인 사진이에요') : null,
     field('움직임', null, fxGrid(CR.MOTIONS, c.motion, (v) => CR.edit('움직임', () => { c.motion = v; }))),
+    c.motion !== 'none' ? field('움직임 크기', null, segPick([[0.7, '작게'], [1, '보통'], [1.3, '크게'], [1.6, '아주 크게']],
+      [0.7, 1, 1.3, 1.6].reduce((b, v) => (Math.abs(v - (c.motionAmt || 1)) < Math.abs(b - (c.motionAmt || 1)) ? v : b), 1), (v) => CR.edit('움직임 크기', () => { c.motionAmt = v; }))) : null,
     field('색감', null, fxGrid(CR.FILTER_NAMES, c.filter, (v) => CR.edit('색감', () => { c.filter = v; }))),
     h('button', { class: 'btn ghost', style: { height: '28px', fontSize: '12px', alignSelf: 'flex-start' }, onclick: () => CR.edit('색감 모두', () => {
       CR.kept().forEach((x) => { x.filter = c.filter; });

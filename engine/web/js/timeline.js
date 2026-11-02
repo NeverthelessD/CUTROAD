@@ -368,7 +368,9 @@ CR.renderTimeline = function (host) {
       const cut = cuts.has(Math.round(b * 100)) || [...cuts].some((k) => Math.abs(k / 100 - b) < minGap);
       tBeat.appendChild(h('div', { class: 'beat' + (ds.has(b) ? ' down' : '') + (cut ? ' cut' : ''), style: { left: x + 'px' } }));
     });
-    TB.climax.forEach(([a, b]) => tBeat.appendChild(h('div', { class: 'climax', style: { left: X(a) + 'px', width: X(b - a) + 'px' }, title: '음악이 가장 신나는 부분' })));
+    if (TB.sections.length) TB.sections.forEach((x) => tBeat.insertBefore(h('div', { class: 'sec ' + x.type, style: { left: X(x.start) + 'px', width: Math.max(2, X(x.end - x.start) - 2) + 'px' }, title: CR.SECTION_NAMES[x.type] },
+      X(x.end - x.start) > 40 ? CR.SECTION_NAMES[x.type] : ''), tBeat.firstChild));
+    else TB.climax.forEach(([a, b]) => tBeat.appendChild(h('div', { class: 'climax', style: { left: X(a) + 'px', width: X(b - a) + 'px' }, title: '음악이 가장 신나는 부분' })));
   }
   const tBgm = h('div', { class: 'track bgm', onpointerdown: laneClick });
   P.audio.forEach((a) => {

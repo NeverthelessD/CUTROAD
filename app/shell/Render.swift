@@ -41,6 +41,7 @@ struct ClipSpec {
     let blur: Double
     let rotate: Int
     let motion: String        // Effects.motion
+    let motionAmt: Double     // 움직임 크기 (1 = 보통)
     let filter: String        // Effects.filters
     let w: Double, h: Double  // 사진 크기 (방향 반영)
     let transType: String?
@@ -60,6 +61,7 @@ struct ClipSpec {
         blur = max(0, num(d, "blur", 0))
         rotate = ((Int(num(d, "rotate", 0)) % 360) + 360) % 360
         motion = str(d, "motion", "none")
+        motionAmt = min(3, max(0, num(d, "motionAmt", 1)))
         filter = str(d, "filter", "none")
         w = num(d, "w", 0); h = num(d, "h", 0)
         if let t = d["trans"] as? [String: Any], let type = t["type"] as? String, !type.isEmpty {
@@ -111,7 +113,7 @@ struct TextSpec {
 /// 박자 효과 (타임라인 시각 기준) — app.js 의 CR.beatFxAt() 과 같은 계산
 struct BeatFx {
     var pulse = false, flash = false, shake = false
-    var beats: [Double] = [], flashes: [Double] = [], climax: [[Double]] = []
+    var beats: [Double] = [], flashes: [Double] = [], climax: [[Double]] = [], pulseIn: [[Double]] = []
     init() {}
     init(_ d: [String: Any]?) {
         guard let d = d else { return }
@@ -121,6 +123,7 @@ struct BeatFx {
         beats = (d["beats"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.doubleValue }.sorted()
         flashes = (d["flashes"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.doubleValue }.sorted()
         climax = (d["climax"] as? [[Any]] ?? []).map { $0.compactMap { ($0 as? NSNumber)?.doubleValue } }.filter { $0.count == 2 }
+        pulseIn = (d["pulseIn"] as? [[Any]] ?? []).map { $0.compactMap { ($0 as? NSNumber)?.doubleValue } }.filter { $0.count == 2 }
     }
     var any: Bool { (pulse || shake) && !beats.isEmpty || flash && !flashes.isEmpty }
     static func last(_ a: [Double], _ t: Double) -> Double? {
@@ -133,7 +136,8 @@ struct BeatFx {
         var s = 1.0, dx = 0.0, dy = 0.0, white = 0.0
         if let b = BeatFx.last(beats, t) {
             let e = t - b
-            if pulse && e < 0.5 { s = 1 + 0.035 * exp(-e / 0.12) }
+            let pulseHere = pulseIn.isEmpty || pulseIn.contains(where: { t >= $0[0] && t < $0[1] })
+            if pulse && pulseHere && e < 0.5 { s = 1 + 0.035 * exp(-e / 0.12) }
             if shake && e < 0.6 && climax.contains(where: { t >= $0[0] && t < $0[1] }) {
                 let a = 0.012 * exp(-e / 0.25)
                 dx = a * sin(2 * .pi * 7 * t)
@@ -148,15 +152,15 @@ struct BeatFx {
 /// 움직임 · 색감 (app.js 의 CR.MOTION · CR.FILTERS 와 같은 값)
 enum Effects {
     /// 사진 한 장이 보이는 동안 p(0→1) 에 따라: 크기 · 가로/세로 이동(화면 너비/높이 비율, 아래 +) · 기울기(시계 방향 °)
-    static func motion(_ m: String, _ p: Double) -> (s: Double, dx: Double, dy: Double, rot: Double) {
+    static func motion(_ m: String, _ p: Double, _ k: Double = 1) -> (s: Double, dx: Double, dy: Double, rot: Double) {
         switch m {
-        case "zoomIn": return (1 + 0.12 * p, 0, 0, 0)
-        case "zoomOut": return (1.12 - 0.12 * p, 0, 0, 0)
-        case "panL": return (1.12, 0.05 - 0.10 * p, 0, 0)
-        case "panR": return (1.12, -0.05 + 0.10 * p, 0, 0)
-        case "up": return (1.12, 0, -0.04 + 0.08 * p, 0)
-        case "down": return (1.12, 0, 0.04 - 0.08 * p, 0)
-        case "tilt": return (1.1 + 0.08 * p, 0, 0, -3 + 3 * p)
+        case "zoomIn": return (1 + 0.12 * k * p, 0, 0, 0)
+        case "zoomOut": return (1 + 0.12 * k * (1 - p), 0, 0, 0)
+        case "panL": return (1 + 0.12 * k, (0.05 - 0.10 * p) * k, 0, 0)
+        case "panR": return (1 + 0.12 * k, (-0.05 + 0.10 * p) * k, 0, 0)
+        case "up": return (1 + 0.12 * k, 0, (-0.04 + 0.08 * p) * k, 0)
+        case "down": return (1 + 0.12 * k, 0, (0.04 - 0.08 * p) * k, 0)
+        case "tilt": return (1 + (0.1 + 0.08 * p) * k, 0, 0, (-3 + 3 * p) * k)
         default: return (1, 0, 0, 0)
         }
     }
@@ -343,14 +347,15 @@ final class Layer {
     let start: Double, end: Double, fadeIn: Double, fadeOut: Double, blur: Double
     let imagePath: String?     // 사진 클립이면 사진 파일
     let motion: String
+    let motionAmt: Double
     let filter: String
     init(trackID: CMPersistentTrackID, sourceRotation: Int, userRotation: Int, start: Double, end: Double,
-         fadeIn: Double, fadeOut: Double, blur: Double, imagePath: String?, motion: String, filter: String) {
+         fadeIn: Double, fadeOut: Double, blur: Double, imagePath: String?, motion: String, motionAmt: Double = 1, filter: String) {
         self.trackID = trackID
         self.orientation = Layer.orient(sourceRotation) ?? .up
         self.userRotate = Layer.orient(userRotation)
         self.start = start; self.end = end; self.fadeIn = fadeIn; self.fadeOut = fadeOut; self.blur = blur
-        self.imagePath = imagePath; self.motion = motion; self.filter = filter
+        self.imagePath = imagePath; self.motion = motion; self.motionAmt = motionAmt; self.filter = filter
     }
     static func orient(_ deg: Int) -> CGImagePropertyOrientation? {
         switch deg {
@@ -494,7 +499,7 @@ final class Compositor: NSObject, AVVideoCompositing {
                 let border = white.cropped(to: CGRect(x: x0 - b, y: y0 - b, width: nw + 2 * b, height: nh + 2 * b))
                 content = content.composited(over: border)
             }
-            let mo = Effects.motion(L.motion, L.progress(t))
+            let mo = Effects.motion(L.motion, L.progress(t), L.motionAmt)
             if mo.s != 1 || mo.dx != 0 || mo.dy != 0 || mo.rot != 0 {
                 content = content.transformed(by: Effects.around(R, s: mo.s, rotDeg: mo.rot, dxPx: mo.dx * Double(R.width), dyPxDown: mo.dy * Double(R.height)))
             }
@@ -788,7 +793,7 @@ enum Builder {
                         try insert(vt, from: base, inT: 0, outT: base.timeRange.end.seconds, at: plan.starts[i], dur: c.dur)
                     } catch { throw RenderError("사진 \(i + 1)번을 타임라인에 놓지 못했어요: \(Exporter.detail(error))") }
                     layers.append(Layer(trackID: vt.trackID, sourceRotation: 0, userRotation: c.rotate, start: plan.starts[i], end: plan.end(i),
-                                        fadeIn: c.fadeIn, fadeOut: c.fadeOut, blur: c.blur, imagePath: c.path, motion: c.motion, filter: c.filter))
+                                        fadeIn: c.fadeIn, fadeOut: c.fadeOut, blur: c.blur, imagePath: c.path, motion: c.motion, motionAmt: c.motionAmt, filter: c.filter))
                 }
                 continue
             }
@@ -808,7 +813,7 @@ enum Builder {
                 try insert(vt, from: sv, inT: c.inT, outT: c.outT, at: plan.starts[i], dur: c.dur)
                 layers.append(Layer(trackID: vt.trackID, sourceRotation: Media.rotation(sv.preferredTransform), userRotation: c.rotate,
                                     start: plan.starts[i], end: plan.end(i), fadeIn: c.fadeIn, fadeOut: c.fadeOut, blur: c.blur,
-                                    imagePath: nil, motion: c.motion, filter: c.filter))
+                                    imagePath: nil, motion: c.motion, motionAmt: c.motionAmt, filter: c.filter))
             }
             if c.volume > 0, let sa = a.tracks(withMediaType: .audio).first {
                 try insert(aTrack(i), from: sa, inT: c.inT, outT: c.outT, at: plan.starts[i], dur: c.dur)

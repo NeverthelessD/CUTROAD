@@ -410,3 +410,13 @@ select.pick { appearance: none; -webkit-appearance: none; padding-right: 30px; b
 .fxgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .fxgrid button { height: 30px; border-radius: 7px; border: 1px solid var(--line); background: var(--field); color: var(--sub); font-size: 12px; }
 .fxgrid button.on { border-color: var(--accent); background: var(--panel); color: var(--text); font-weight: 600; }
+
+/* 1.2 음악 흐름(구간) */
+.track.beats .sec { position: absolute; top: 0; bottom: 0; border-radius: 3px; font-size: 9px; font-weight: 600; color: var(--sub); padding: 0 4px; line-height: 18px; white-space: nowrap; overflow: hidden; pointer-events: none; }
+.track.beats .sec.intro { background: color-mix(in srgb, var(--vLine) 16%, transparent); }
+.track.beats .sec.verse { background: color-mix(in srgb, var(--sub) 8%, transparent); }
+.track.beats .sec.chorus { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+.track.beats .sec.calm { background: color-mix(in srgb, var(--aWave) 14%, transparent); }
+.track.beats .sec.outro { background: color-mix(in srgb, var(--tLine) 16%, transparent); }
+.automake .flow { display: flex; gap: 2px; align-items: center; height: 22px; }
+.automake .flow span { height: 20px; border-radius: 4px; font-size: 10px; font-weight: 600; color: var(--sub); display: flex; align-items: center; justify-content: center; overflow: hidden; white-space: nowrap; min-width: 0; }

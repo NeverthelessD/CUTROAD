@@ -293,7 +293,7 @@ CR.Player = {
       if (bad) return;
       const g = this.geom(m, c);
       // 움직임
-      const mo = quick ? { s: 1, dx: 0, dy: 0, rot: 0 } : CR.motion(c.motion, (t - L.starts[i]) / Math.max(1e-3, L.end(i) - L.starts[i]));
+      const mo = quick ? { s: 1, dx: 0, dy: 0, rot: 0 } : CR.motion(c.motion, (t - L.starts[i]) / Math.max(1e-3, L.end(i) - L.starts[i]), c.motionAmt);
       const b = g.framed ? 0.012 * base : 0;
       Object.assign(el.style, {
         width: g.w + 'px', height: g.h + 'px', left: (g.left - b) + 'px', top: (g.top - b) + 'px',

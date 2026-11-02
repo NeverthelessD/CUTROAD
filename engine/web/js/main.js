@@ -127,8 +127,9 @@ if (!CR.hasNative) {
     chooseFolder: async (m) => ({ path: m.purpose === 'photos' ? (window.CR_MOCK_FOLDER || '') : '' }),
     scanPhotos: async () => ({ paths: window.CR_MOCK_PHOTOS || [] }),
     beats: async () => {
-      const bpm = 112, p = 60 / bpm, d = 60, beats = [], energy = [];
-      for (let t = 0.25; t < d; t += p) { beats.push(+t.toFixed(3)); energy.push(t > 24 && t < 40 ? 0.95 : 0.55); }
+      const bpm = 112, p = 60 / bpm, d = 80, beats = [], energy = [];
+      const lvl = (t) => (t < 9 ? 0.35 : t < 26 ? 0.6 : t < 43 ? 0.95 : t < 52 ? 0.4 : t < 69 ? 0.95 : 0.45);
+      for (let t = 0.25; t < d; t += p) { beats.push(+t.toFixed(3)); energy.push(lvl(t) + (beats.length % 4 === 1 ? 0.03 : 0)); }
       return { bpm, beats, downbeats: beats.filter((_, i) => i % 4 === 0), energy, climax: [[24.1, 40]], duration: d };
     },
     title: async () => ({ ok: true }),

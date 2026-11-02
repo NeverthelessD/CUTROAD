@@ -422,6 +422,7 @@ CR.openAutoMake = function (prev) {
     style: S0, motions: [], trans: [], color: 'none', beat: [],
     bgBlur: true, frame: false, mood: 'normal', order: 'date', length: 'music', aspect: '16:9',
     titleOn: true, title: '', dates: false, error: '', busy: false, titleEdited: !!prev,
+    seed: Math.floor(Math.random() * 1e9),
   };
   const applyStyle = (k) => {
     st.style = k;
@@ -477,7 +478,8 @@ CR.openAutoMake = function (prev) {
     draw();
   };
 
-  const plan = () => (st.photos.length && st.ana ? CR.arrange(st.photos.length, st.ana, { mood: st.mood, length: st.length }) : null);
+  const plan = () => (st.photos.length && st.ana ? CR.arrange(st.photos.length, st.ana, { mood: st.mood, length: st.length }, CR.rng(st.seed)) : null);
+  const SEC_COLOR = { intro: 'rgba(77,134,255,.22)', verse: 'rgba(160,160,170,.10)', chorus: 'rgba(255,90,31,.24)', calm: 'rgba(79,209,197,.18)', outro: 'rgba(167,139,250,.22)' };
 
   const drawWave = (cv, A) => {
     const W = cv.parentNode.clientWidth || 420, H = 40;
@@ -487,6 +489,7 @@ CR.openAutoMake = function (prev) {
     const css = getComputedStyle(document.documentElement);
     const dur = st.ana.duration || 1;
     const pk = (st.wave && st.wave.peaks) || [], per = (st.wave && st.wave.perSec) || 50;
+    if (A) A.sections.forEach((x) => { g.fillStyle = SEC_COLOR[x.type] || 'transparent'; g.fillRect(x.start / dur * W, 0, (x.end - x.start) / dur * W, H); });
     g.strokeStyle = css.getPropertyValue('--bWave').trim(); g.lineWidth = 1.6; g.beginPath();
     for (let x = 2; x < W - 1; x += 3) {
       const a = Math.floor(x / W * dur * per), b = Math.max(a + 1, Math.floor((x + 3) / W * dur * per));
@@ -541,6 +544,8 @@ CR.openAutoMake = function (prev) {
             try { const r = await CR.native('open', { kind: 'music' }); if (r.paths && r.paths[0]) loadMusic(r.paths[0]); } catch (e) { CR.toast(e.message, { bad: true }); }
           } }, I('music'), h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis' } }, st.music ? st.music.name : '음악 고르기…'))),
         st.ana ? h('div', { class: 'wavebox' }, cv) : h('div', { class: 'empty' }, st.musicLoading || 'MP3 · WAV · M4A'),
+        A ? h('div', { class: 'flow' }, A.sections.map((x) => h('span', { style: { flex: String(Math.max(0.6, x.end - x.start)), background: SEC_COLOR[x.type] } }, CR.SECTION_NAMES[x.type])),
+          h('button', { class: 'btn ghost', title: '같은 설정으로 컷 리듬만 새로 뽑아요', style: { height: '22px', padding: '0 8px', fontSize: '11px', flex: 'none' }, onclick: () => { st.seed = Math.floor(Math.random() * 1e9); draw(); } }, I('refresh'), '다른 리듬')) : null,
         h('span', { class: 'info' }, st.ana ? [h('b', null, CR.short(st.ana.duration)), ' · 박자 ', h('b', null, Math.round(st.ana.bpm) + ' BPM'),
           st.ana.guessed ? ' (박자가 뚜렷하지 않아 고르게 나눠요)' : '', A ? [' · ', h('span', { style: { color: 'var(--accent)' } }, '|'), ' 사진이 바뀌는 곳'] : ''] : '')),
     ));
@@ -590,13 +595,14 @@ CR.openAutoMake = function (prev) {
 
     if (A) {
       const avg = A.end / st.photos.length;
-      const nb = A.beatLen ? avg / A.beatLen : 0;
-      const lo = Math.max(1, Math.round(nb / 2)), hi = Math.max(lo, Math.round(nb * 1.5));
+      void avg;
       CR.put(body, h('div', { class: 'facts' },
         h('div', null, h('small', null, '영상 길이'), h('b', null, CR.short(A.end))),
-        h('div', null, h('small', null, '사진 한 장'), h('b', null, '평균 ' + CR.round(avg, 1) + '초 · ' + (lo === hi ? lo : lo + '~' + hi) + '박자')),
+        h('div', null, h('small', null, '컷 리듬'), h('b', null, CR.round(Math.min(...A.shots.map((x) => x.t1 - x.t0)), 1) + '~' + CR.round(Math.max(...A.shots.map((x) => x.t1 - x.t0)), 1) + '초' +
+          (A.shots.some((x) => x.burst) ? ' · 몰아치기 ' + A.shots.filter((x, i) => x.burst && !(A.shots[i - 1] || {}).burst).length + '번' : ''))),
         h('div', null, h('small', null, '효과'), h('b', null, '움직임 ' + st.motions.length + ' · 넘기기 ' + st.trans.length + ' · 박자 ' + st.beat.length)),
         h('div', null, h('small', null, '끝부분'), h('b', null, A.end < st.ana.duration - 0.5 ? '음악 페이드 아웃' : '음악과 함께 끝'))));
+      if (A.used < st.photos.length) CR.put(body, h('p', { class: 'hint' }, '사진이 음악 길이에 비해 너무 많아서 ' + st.photos.length + '장 중 ' + A.used + '장을 고르게 골라 써요. ‘영상 길이’를 ‘사진 수에 맞춰’로 바꾸면 모두 써요.'));
     }
     if (st.error) CR.put(body, h('div', { class: 'errbox' }, st.error));
 
@@ -611,7 +617,8 @@ CR.openAutoMake = function (prev) {
     st.busy = true;
     const res = CR.buildAuto(Object.assign({}, st, { seed: Math.floor(Math.random() * 1e9) }));
     const np = CR.normalize(res.P);
-    const info = { n: st.photos.length, music: st.music.name, bpm: st.ana.bpm, total: res.A.end, trans: res.trans.filter((x) => x > 0).length, note: res.A.note, end: res.A.end };
+    const info = { n: res.A.used, music: st.music.name, bpm: st.ana.bpm, total: res.A.end, trans: res.trans.filter((x) => x > 0).length, note: res.A.note, end: res.A.end,
+      flow: res.A.sections.map((x) => CR.SECTION_NAMES[x.type]).filter((x, i, a) => x !== a[i - 1]).join(' → ') };
     close();
     if (prev && CR.P) {
       CR.edit('사진 영상 다시 만들기', () => {

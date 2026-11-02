@@ -139,14 +139,14 @@ clips = []
 for i, f in enumerate(files):
     port = i % 3 == 2
     clips.append({"path": f, "kind": "image", "w": 600 if port else 1200, "h": 900 if port else 800, "in": 0, "out": 2.5,
-                  "motion": Mo[i], "filter": F[i], "fadeIn": 0.5 if i == 0 else 0, "fadeOut": 0.8 if i == 9 else 0,
+                  "motion": Mo[i], "motionAmt": [0.7, 1, 1.25, 1.6][i % 4], "filter": F[i], "fadeIn": 0.5 if i == 0 else 0, "fadeOut": 0.8 if i == 9 else 0,
                   "trans": {"type": T[i], "dur": 0.5} if i < 9 else None})
 beats = [round(0.25 + k * 0.5, 3) for k in range(42)]
 print(json.dumps({"clips": clips, "audio": [{"path": m + "/박자120.wav", "start": 0, "in": 0, "out": 20.5, "volume": 0.8, "fadeIn": 0, "fadeOut": 1.5}],
   "texts": [{"text": "여름 휴가 2026", "start": 0, "end": 2.2, "pos": "center", "size": "l", "box": False},
             {"text": "2026. 8. 3.", "start": 2.2, "end": 4.5, "pos": "br", "size": "s", "box": False}],
   "aspect": "16:9", "fit": "fit", "bgBlur": True, "photoFrame": True,
-  "beatFx": {"pulse": True, "flash": True, "shake": True, "beats": beats, "flashes": beats[::4], "climax": [[8, 14]]},
+  "beatFx": {"pulse": True, "flash": True, "shake": True, "beats": beats, "flashes": beats[::4], "climax": [[8, 14]], "pulseIn": [[8, 14]]},
   "out": {"preset": "hd", "dir": m + "/out", "name": "사진 영상"}}, ensure_ascii=False))
 PY
 "$BIN" --test-base > "$OUT/base.json" 2>&1; cat "$OUT/base.json"

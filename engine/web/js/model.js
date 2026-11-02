@@ -483,7 +483,7 @@ CR.spec = function (opt) {
     return { path: path(c.mediaId), kind: m.kind === 'image' ? 'image' : 'video', w: m.width || 0, h: m.height || 0, in: c.in, out: c.out,
       speed: opt.plain ? 1 : c.speed, volume: c.volume, fadeIn: opt.plain ? 0 : c.fadeIn, fadeOut: opt.plain ? 0 : c.fadeOut,
       blur: opt.plain ? 0 : c.blur, rotate: opt.plain ? 0 : c.rotate, trans: opt.plain ? null : c.trans,
-      motion: opt.plain ? 'none' : c.motion, filter: opt.plain ? 'none' : c.filter };
+      motion: opt.plain ? 'none' : c.motion, motionAmt: c.motionAmt === undefined ? 1 : c.motionAmt, filter: opt.plain ? 'none' : c.filter };
   });
   const audio = opt.plain ? [] : P.audio.map((a) => ({ path: path(a.mediaId), start: a.start, in: a.in, out: a.out, volume: a.volume, fadeIn: a.fadeIn, fadeOut: a.fadeOut }));
   let texts = opt.plain ? [] : P.texts.slice();
@@ -493,7 +493,7 @@ CR.spec = function (opt) {
   const fx = P.beatFx || {};
   if (!opt.plain && (fx.pulse || fx.flash || fx.shake)) {
     const B = CR.timelineBeats();
-    out.beatFx = { pulse: !!fx.pulse, flash: !!fx.flash, shake: !!fx.shake, beats: B.beats, flashes: B.flashes, climax: B.climax };
+    out.beatFx = { pulse: !!fx.pulse, flash: !!fx.flash, shake: !!fx.shake, beats: B.beats, flashes: B.flashes, climax: B.climax, pulseIn: B.pulseIn };
   }
   return out;
 };
@@ -512,16 +512,18 @@ CR.srt = function () {
 
 CR.MOTIONS = [['zoomIn', '천천히 확대'], ['zoomOut', '천천히 축소'], ['panL', '왼쪽 → 오른쪽'], ['panR', '오른쪽 → 왼쪽'],
   ['up', '위로'], ['down', '아래로'], ['tilt', '기울며 확대'], ['none', '움직이지 않기']];
-CR.motion = function (m, p) {
+/** k = 움직임 크기 (1 = 보통, 쉬어 가는 부분은 작게, 절정은 크게) — Render.swift Effects.motion 과 같은 값 */
+CR.motion = function (m, p, k) {
   p = CR.clamp(p || 0, 0, 1);
+  k = k === undefined || k === null ? 1 : k;
   switch (m) {
-    case 'zoomIn': return { s: 1 + 0.12 * p, dx: 0, dy: 0, rot: 0 };
-    case 'zoomOut': return { s: 1.12 - 0.12 * p, dx: 0, dy: 0, rot: 0 };
-    case 'panL': return { s: 1.12, dx: 0.05 - 0.10 * p, dy: 0, rot: 0 };
-    case 'panR': return { s: 1.12, dx: -0.05 + 0.10 * p, dy: 0, rot: 0 };
-    case 'up': return { s: 1.12, dx: 0, dy: -0.04 + 0.08 * p, rot: 0 };
-    case 'down': return { s: 1.12, dx: 0, dy: 0.04 - 0.08 * p, rot: 0 };
-    case 'tilt': return { s: 1.1 + 0.08 * p, dx: 0, dy: 0, rot: -3 + 3 * p };
+    case 'zoomIn': return { s: 1 + 0.12 * k * p, dx: 0, dy: 0, rot: 0 };
+    case 'zoomOut': return { s: 1 + 0.12 * k * (1 - p), dx: 0, dy: 0, rot: 0 };
+    case 'panL': return { s: 1 + 0.12 * k, dx: (0.05 - 0.10 * p) * k, dy: 0, rot: 0 };
+    case 'panR': return { s: 1 + 0.12 * k, dx: (-0.05 + 0.10 * p) * k, dy: 0, rot: 0 };
+    case 'up': return { s: 1 + 0.12 * k, dx: 0, dy: (-0.04 + 0.08 * p) * k, rot: 0 };
+    case 'down': return { s: 1 + 0.12 * k, dx: 0, dy: (0.04 - 0.08 * p) * k, rot: 0 };
+    case 'tilt': return { s: 1 + (0.1 + 0.08 * p) * k, dx: 0, dy: 0, rot: (-3 + 3 * p) * k };
     default: return { s: 1, dx: 0, dy: 0, rot: 0 };
   }
 };
@@ -547,32 +549,51 @@ CR.TRANS = [['dissolve', '디졸브'], ['fadeblack', '검은 화면'], ['flash',
 CR.BEATFX = [['pulse', '박자 펄스'], ['flash', '강한 박자에 번쩍'], ['shake', '절정에서 흔들림']];
 
 /** 배경음악에 저장된 박자(음악 기준 시각)를 타임라인 시각으로 */
+CR.SECTION_NAMES = { intro: '도입', verse: '전개', chorus: '절정', calm: '쉬어 가기', outro: '마무리' };
+
 CR.timelineBeats = function () {
   const P = CR.P;
   const total = CR.timing(CR.kept()).total;
   const key = JSON.stringify(P.audio.map((a) => [a.id, a.start, a.in, a.out, !!a.beats])) + '|' + total;
   if (CR.cache.tlBeats && CR.cache.tlBeats.key === key) return CR.cache.tlBeats;
-  const beats = [], down = [], flashes = [], climax = [];
+  const beats = [], down = [], flashes = [], climax = [], sections = [], pulseIn = [];
   P.audio.forEach((a) => {
     const B = a.beats;
     if (!B || !B.beats) return;
     const end = Math.min(total, a.start + (a.out - a.in));
     const map = (b) => a.start + (b - a.in);
     const ds = new Set(B.downbeats || []);
+    const secs = (B.sections || []).map((x) => ({ start: Math.max(a.start, map(x.start)), end: Math.min(end, map(x.end)), type: x.type })).filter((x) => x.end > x.start);
+    const inChorus = (t) => secs.some((x) => x.type === 'chorus' && t >= x.start && t < x.end);
     B.beats.forEach((b, i) => {
       if (b < a.in || b >= a.out) return;
       const t = map(b);
       if (t < 0 || t >= end) return;
       beats.push(t);
-      if (ds.has(b)) { down.push(t); if ((B.energy && B.energy[i] || 0) >= 0.7) flashes.push(t); }
+      if (ds.has(b)) {
+        down.push(t);
+        if (secs.length) {
+          // 1.2: 번쩍은 '절정'에 들어가는 첫 박 + 절정 안에서 두 마디마다
+          const sec = secs.find((x) => t >= x.start - 0.05 && t < x.end);
+          if (sec && sec.type === 'chorus') {
+            const nb = down.filter((d) => d >= sec.start - 0.05 && d <= t).length;
+            if (nb === 1 || nb % 2 === 1) flashes.push(t);
+          }
+        } else if ((B.energy && B.energy[i] || 0) >= 0.7) flashes.push(t);
+      }
     });
-    (B.climax || []).forEach(([x, y]) => {
-      const s = Math.max(a.start, map(x)), e = Math.min(end, map(y));
-      if (e > s) climax.push([CR.round(s, 3), CR.round(e, 3)]);
-    });
+    if (secs.length) {
+      secs.forEach((x) => { sections.push(x); if (x.type === 'chorus') { climax.push([CR.round(x.start, 3), CR.round(x.end, 3)]); pulseIn.push([CR.round(x.start, 3), CR.round(x.end, 3)]); } });
+    } else {
+      (B.climax || []).forEach(([x, y]) => {
+        const s0 = Math.max(a.start, map(x)), e = Math.min(end, map(y));
+        if (e > s0) climax.push([CR.round(s0, 3), CR.round(e, 3)]);
+      });
+    }
+    void inChorus;
   });
   beats.sort((x, y) => x - y); down.sort((x, y) => x - y); flashes.sort((x, y) => x - y);
-  CR.cache.tlBeats = { key, beats, down, flashes, climax };
+  CR.cache.tlBeats = { key, beats, down, flashes, climax, sections, pulseIn };
   return CR.cache.tlBeats;
 };
 
@@ -591,7 +612,8 @@ CR.beatFxAt = function (t) {
   const b = lastLE(B.beats, t);
   if (b !== null) {
     const e = t - b;
-    if (fx.pulse && e < 0.5) s = 1 + 0.035 * Math.exp(-e / 0.12);
+    const pulseHere = !B.pulseIn.length || B.pulseIn.some(([x, y]) => t >= x && t < y);
+    if (fx.pulse && pulseHere && e < 0.5) s = 1 + 0.035 * Math.exp(-e / 0.12);
     if (fx.shake && e < 0.6 && B.climax.some(([x, y]) => t >= x && t < y)) {
       const a = 0.012 * Math.exp(-e / 0.25);
       dx = a * Math.sin(2 * Math.PI * 7 * t);
@@ -628,71 +650,244 @@ CR.autoStyle = function (ana) {
 };
 
 /**
- * 사진 n장을 음악 박자에 맞춰 나눠요.
- * ana = {beats, downbeats, energy, duration}, opt = {mood: calm|normal|upbeat, length: music|photos}
- * 돌려주는 값: {bounds: [0, t1, t2, …, end] (n+1개), end, beatLen, note}
+ * 음악을 도입 · 전개 · 절정 · 쉬어 가기 · 마무리로 나눠요 (1.2)
+ * 마디(강박) 단위로 소리 크기를 보고, 크게 바뀌는 곳(최소 4마디 · 최대 16마디마다)에서 나눠요.
  */
-CR.arrange = function (n, ana, opt) {
+CR.sections = function (ana) {
+  const B = ana.beats || [], E = ana.energy || [], dur = ana.duration || 0;
+  if (B.length < 24) return [{ start: 0, end: dur, type: 'verse', energy: 0.6 }];
+  const ds = new Set(ana.downbeats || []);
+  let bars = [];
+  B.forEach((b, i) => { if (ds.has(b)) bars.push(i); });
+  if (bars.length < 6) { bars = []; for (let i = 0; i < B.length; i += 4) bars.push(i); }
+  const nb = bars.length;
+  const barE = bars.map((st, k) => {
+    const en = k + 1 < nb ? bars[k + 1] : B.length;
+    let sum = 0; for (let i = st; i < en; i++) sum += E[i] || 0;
+    return sum / Math.max(1, en - st);
+  });
+  const mean = (a, b) => { a = Math.max(0, a); b = Math.min(nb, b); let t = 0; for (let k = a; k < b; k++) t += barE[k]; return b > a ? t / (b - a) : 0; };
+  const nov = barE.map((_, k) => (k < 2 || k > nb - 2 ? 0 : Math.abs(mean(k, k + 4) - mean(k - 4, k))));
+  const cuts = [0];
+  for (let k = 4; k < nb - 3; k++) {
+    const last = cuts[cuts.length - 1];
+    if (k - last < 4) continue;
+    const peak = nov[k] >= nov[k - 1] && nov[k] >= (nov[k + 1] || 0);
+    if ((peak && nov[k] > 0.12) || k - last >= 16) cuts.push(k);
+  }
+  const raw = cuts.map((k, j) => ({ b0: k, b1: j + 1 < cuts.length ? cuts[j + 1] : nb }));
+  const es = raw.map((x) => mean(x.b0, x.b1));
+  const sorted = es.slice().sort((x, y) => x - y);
+  const hi = Math.max(0.62, sorted[Math.floor((sorted.length - 1) * 0.7)]);
+  const lo = Math.min(0.5, sorted[Math.floor((sorted.length - 1) * 0.3)]);
+  return raw.map((x, j) => {
+    const e = es[j];
+    let type = e >= hi ? 'chorus' : e <= lo ? 'calm' : 'verse';
+    if (raw.length > 2 && j === 0 && type !== 'chorus') type = 'intro';
+    if (raw.length > 2 && j === raw.length - 1 && type !== 'chorus') type = 'outro';
+    return { start: x.b0 === 0 ? 0 : B[bars[x.b0]], end: x.b1 >= nb ? dur : B[bars[x.b1]], type, energy: CR.round(e, 2) };
+  });
+};
+
+/** 구간마다 쓰는 컷 길이(박자) 묶음 — 사람이 편집할 때처럼 길고 짧은 컷을 섞어요 */
+CR.PATTERNS = {
+  intro: [[8], [8, 4, 4], [4, 4, 8], [8, 8]],
+  verse: [[4, 4, 2, 2, 4], [4, 2, 2, 4, 4], [4, 4, 8], [2, 2, 4, 8], [4, 4, 4, 2, 2]],
+  chorus: [[2, 2, 2, 2, 4], [2, 2, 4, 2, 2, 4], [1, 1, 2, 2, 2, 4], [4, 2, 2, 1, 1, 2], [2, 1, 1, 2, 2, 4]],
+  calm: [[8, 8], [8, 4, 4], [4, 8, 4]],
+  outro: [[4, 4, 8], [8, 8], [4, 8]],
+};
+
+/**
+ * 사진 n장을 음악 흐름에 맞춰 나눠요 (1.2: 구간별 리듬 · 몰아치기 · 마무리).
+ * 돌려주는 값: {bounds: [0, …, end] (컷 수 + 1), shots: [{t0, t1, sec, burst}], sections, end, beatLen, note, used}
+ */
+CR.arrange = function (n, ana, opt, rnd) {
+  rnd = rnd || CR.rng(opt.seed || 7);
   const dur = ana.duration || 0;
   let beats = (ana.beats || []).filter((b) => b > 0.3 && b < dur - 0.2);
   if (beats.length < 4) { beats = []; for (let t = 0.6; t < dur - 0.2; t += 0.6) beats.push(t); }
   const gaps = beats.slice(1).map((b, i) => b - beats[i]).sort((x, y) => x - y);
   const beatLen = gaps.length ? gaps[gaps.length >> 1] : 0.6;
-  const energyAt = (t) => {
-    if (!ana.energy || !ana.beats) return 0.5;
-    const i = Math.max(0, ana.beats.findIndex((b) => b > t) - 1);
-    return ana.energy[i] === undefined ? 0.5 : ana.energy[i];
-  };
-  const base = { calm: 8, normal: 4, upbeat: 2 }[opt.mood] || 4;
-  const want = (t) => { const e = energyAt(t); let L = base; if (e > 0.8) L /= 2; else if (e < 0.35) L *= 2; return Math.max(opt.mood === 'upbeat' ? 1 : 2, L); };
-  const minSeg = 0.4, maxSeg = 10;
+  const scale = { calm: 2, normal: 1, upbeat: 0.5 }[opt.mood] || 1;
+  const minSeg = 0.35, maxSeg = 10;
+  let sections = CR.sections(Object.assign({}, ana, { duration: dur }));
   let note = '';
-  // 박자 칸(grid): 0, 박자들…, 끝
-  const gridFor = (end, half) => {
-    let g = [0].concat(beats.filter((b) => b < end - 0.2));
-    if (half) { const h = []; g.forEach((b, i) => { h.push(b); const nx = i + 1 < g.length ? g[i + 1] : end; if (nx - b > 2 * minSeg) h.push((b + nx) / 2); }); g = h; }
-    g.push(end);
-    return g;
+  const grid = [0].concat(beats).concat([dur]);
+  const idxAt = (t) => { let best = 0; grid.forEach((g, i) => { if (Math.abs(g - t) < Math.abs(grid[best] - t)) best = i; }); return best; };
+
+  // 1) 자연스러운 컷: 구간마다 그 구간다운 묶음을 골라 채워요
+  const natural = () => {
+    const shots = [];
+    sections.forEach((sec, si) => {
+      const i0 = idxAt(sec.start), i1 = idxAt(sec.end);
+      let i = i0;
+      let pats = CR.PATTERNS[sec.type] || CR.PATTERNS.verse;
+      while (i < i1) {
+        const pat = pats[Math.floor(rnd() * pats.length)];
+        for (const L0 of pat) {
+          if (i >= i1) break;
+          const L = Math.max(1, Math.round(L0 * scale));
+          let j = Math.min(i1, i + L);
+          if (i1 - j > 0 && i1 - j < 1) j = i1;
+          shots.push({ i0: i, i1: j, sec: sec.type, si, burst: L <= 1 && sec.type === 'chorus' });
+          i = j;
+        }
+      }
+    });
+    return shots.map((x) => ({ t0: grid[x.i0], t1: grid[x.i1], sec: x.sec, si: x.si, burst: x.burst }));
   };
-  let end = dur;
-  if (opt.length === 'photos') {
-    // 사진마다 알맞은 박자 수만큼 → 음악보다 길면 음악 전체에 맞춰요
-    let t = 0, k = 0, bi = 0;
-    while (k < n && t < dur) {
-      const L = want(t);
-      bi += L;
-      t = bi - 1 < beats.length ? beats[Math.min(beats.length - 1, bi - 1)] : dur;
-      k++;
+  let shots = natural();
+  const len = (x) => x.t1 - x.t0;
+
+  if (opt.length === 'photos' && shots.length >= n) {
+    // 사진 수에 맞춰: 사진이 끝나는 곳에서 마디에 맞춰 끝내요
+    shots = shots.slice(0, n);
+    const end = shots[n - 1].t1;
+    if (end < dur - 0.5) { sections = sections.filter((x) => x.start < end).map((x) => Object.assign({}, x, { end: Math.min(x.end, end) })); note = 'photos'; }
+  } else if (opt.length === 'photos') note = 'fit';
+
+  // 사진이 너무 적으면 한 장이 maxSeg 를 넘지 않게, 구간 경계에서 영상을 줄여요
+  if (shots.length > n && dur / n > maxSeg) {
+    const want = n * 6;
+    const cutAt = (sections.find((x) => x.end >= want) || sections[sections.length - 1]).end;
+    sections = sections.filter((x) => x.start < cutAt).map((x) => Object.assign({}, x, { end: Math.min(x.end, cutAt) }));
+    const last = sections[sections.length - 1]; if (last && last.type !== 'chorus') last.type = 'outro';
+    shots = shots.filter((x) => x.t0 < cutAt - 0.2).map((x) => Object.assign({}, x, { t1: Math.min(x.t1, cutAt) }));
+    shots[shots.length - 1].t1 = cutAt;
+    note = 'short';
+  }
+
+  // 2) 사진 수에 맞추기 — 구간마다 원래 컷 수의 비율대로 사진을 나눠 줘서, 절정은 늘 더 빠르고 도입 · 마무리는 느리게 남아요
+  const secW = { chorus: 1.3, verse: 1, intro: 0.7, calm: 0.7, outro: 0.7 };
+  const mergeAt = (k) => { shots[k] = { t0: shots[k].t0, t1: shots[k + 1].t1, sec: shots[k].sec, si: shots[k].si, burst: false }; shots.splice(k + 1, 1); };
+  const splitAt = (k) => {
+    const x = shots[k], mid = (x.t0 + x.t1) / 2;
+    let cut = null;
+    beats.forEach((b) => { if (b > x.t0 + minSeg && b < x.t1 - minSeg && (cut === null || Math.abs(b - mid) < Math.abs(cut - mid))) cut = b; });
+    if (cut === null) cut = mid;
+    const burst = x.sec === 'chorus' && (x.t1 - x.t0) <= beatLen * 1.6;
+    shots.splice(k, 1, { t0: x.t0, t1: cut, sec: x.sec, si: x.si, burst }, { t0: cut, t1: x.t1, sec: x.sec, si: x.si, burst });
+  };
+  const ids = [...new Set(shots.map((x) => x.si))];
+  if (shots.length !== n && n >= ids.length) {
+    const N0 = shots.length;
+    const cnt = ids.map((si) => shots.filter((x) => x.si === si).length);
+    const raw = cnt.map((c) => (c * n) / N0);
+    const q = raw.map((r) => Math.max(1, Math.floor(r)));
+    let rem = n - q.reduce((a, b) => a + b, 0);
+    const order = raw.map((r, j) => [r - Math.floor(r), j]).sort((a, b) => b[0] - a[0]);
+    for (let k = 0; rem > 0; k = (k + 1) % order.length) { q[order[k][1]]++; rem--; }
+    while (rem < 0) { let j = q.indexOf(Math.max(...q)); if (q[j] <= 1) break; q[j]--; rem++; }
+    ids.forEach((si, j) => {
+      for (let guard = 0; guard < 2000; guard++) {
+        const idx = shots.map((x, k) => (x.si === si ? k : -1)).filter((k) => k >= 0);
+        if (idx.length === q[j]) break;
+        if (idx.length > q[j]) {
+          let best = -1, bc = 1e9;
+          for (const k of idx) if (k + 1 < shots.length && shots[k + 1].si === si) { const c = len(shots[k]) + len(shots[k + 1]) + rnd() * 0.01; if (c < bc) { bc = c; best = k; } }
+          if (best < 0) break;
+          mergeAt(best);
+        } else {
+          let best = -1, bl = 0;
+          for (const k of idx) if (len(shots[k]) >= 2 * minSeg && len(shots[k]) > bl) { bl = len(shots[k]); best = k; }
+          if (best < 0) break;
+          splitAt(best);
+        }
+      }
+    });
+  }
+  while (shots.length > n) {
+    let best = -1, bc = 1e9;
+    for (let k = 0; k + 1 < shots.length; k++) {
+      const same = shots[k].sec === shots[k + 1].sec ? 1 : 1.6;
+      const c = (len(shots[k]) + len(shots[k + 1])) * same * (shots[k].sec === 'chorus' ? 1.25 : 1) + rnd() * 0.01;
+      if (c < bc) { bc = c; best = k; }
     }
-    if (k >= n && t < dur - 0.5) end = t; else note = 'fit';
+    mergeAt(best);
   }
-  // 사진이 너무 적으면 한 장이 maxSeg 를 넘지 않게 영상을 줄여요
-  if (end / n > maxSeg) { end = Math.min(end, n * maxSeg * 0.8); note = 'short'; }
-  let grid = gridFor(end, false);
-  let S = grid.length - 1;
-  if (S < n) { grid = gridFor(end, true); S = grid.length - 1; }
-  if (S < n) {
-    // 사진이 아주 많으면 한 장 minSeg 초로, 영상은 음악보다 길 수 없어서 앞에서부터 고르게
-    end = Math.min(dur, n * minSeg * 1.5);
-    grid = []; for (let i = 0; i <= n; i++) grid.push(end * i / n);
-    S = n; note = 'many';
+  while (shots.length < n) {
+    let best = -1, bs = 0;
+    shots.forEach((x, k) => { const sc = len(x) * (secW[x.sec] || 1); if (len(x) >= 2 * minSeg && sc > bs) { bs = sc; best = k; } });
+    if (best < 0) break;
+    splitAt(best); // 박자 위에서 나눠요 (가운데에 가장 가까운 박자, 없으면 반 박자)
   }
-  // 무게(박자 수)를 나눠 갖고, 칸 경계에 맞춰 반올림
-  const w = []; let W = 0;
-  for (let i = 0; i < n; i++) { const x = want(end * (i + 0.5) / n); w.push(x); W += x; }
-  const avg = S / n;
-  const q = avg >= 6 ? 4 : avg >= 3 ? 2 : 1;
-  const idx = [0];
-  let acc = 0;
-  for (let i = 0; i < n - 1; i++) {
-    acc += w[i];
-    let b = Math.round((S * acc / W) / q) * q;
-    b = Math.max(b, idx[idx.length - 1] + 1);
-    b = Math.min(b, S - (n - 1 - i));
-    idx.push(b);
+  const used = shots.length;
+  if (used < n) note = 'many';
+  const end = shots.length ? shots[shots.length - 1].t1 : dur;
+  return { bounds: [0].concat(shots.map((x) => CR.round(x.t1, 3))), shots, sections, end: CR.round(end, 3), beatLen, note, used };
+};
+
+/** 넘기기 종류 묶음: 부드럽게(쉬어 가는 곳) · 보통(전개) · 힘차게(절정에 들어갈 때) */
+CR.TRANS_KIND = { dissolve: 'soft', blur: 'soft', fadeblack: 'soft', slide: 'medium', wipe: 'medium', circle: 'medium', blinds: 'medium', flash: 'punch', zoom: 'punch', spin: 'punch' };
+
+/**
+ * 컷마다 움직임 · 넘기기를 정해요 (사람 편집처럼):
+ *  - 같은 구간 안은 대부분 바로 넘어가고(컷), 구간이 바뀌는 곳에만 눈에 띄는 넘기기
+ *  - 절정에 들어갈 때는 힘찬 넘기기(번쩍 · 확대 · 빙글), 쉬어 가는 곳 · 마무리로 갈 때는 부드럽게 길게
+ *  - 움직임은 방향을 번갈아(왼→오 다음엔 오→왼이나 확대), 세로 사진은 위아래 · 확대, 짧은 몰아치기 컷은 멈추거나 툭 확대
+ *  - 첫 컷은 천천히 확대, 마지막 컷은 천천히 축소하며 끝나요
+ */
+CR.planEffects = function (shots, photos, st, rnd) {
+  const motions = st.motions || [], trans = st.trans || [];
+  const out = shots.map(() => ({ motion: 'none', amt: 1, trans: null, tdur: 0 }));
+  const has = (m) => motions.includes(m);
+  const opposite = { panL: 'panR', panR: 'panL', up: 'down', down: 'up', zoomIn: 'zoomOut', zoomOut: 'zoomIn' };
+  let prev = null;
+  const beatLen = st.beatLen || 0.55;
+  shots.forEach((x, k) => {
+    const L = x.t1 - x.t0;
+    const ph = photos[k] || {};
+    const portrait = ph.height > ph.width;
+    const o = out[k];
+    o.amt = { intro: 0.7, calm: 0.7, outro: 0.75, verse: 1, chorus: 1.25 }[x.sec] || 1;
+    if (!motions.length) { o.motion = 'none'; return; }
+    if (x.burst || L < 0.7) {
+      // 몰아치기: 멈춤과 툭 확대를 번갈아
+      o.motion = prev === 'zoomIn' || !has('zoomIn') ? 'none' : 'zoomIn';
+      o.amt = 1.6;
+    } else {
+      let cand = motions.filter((m) => m !== prev);
+      if (portrait) { const pv = cand.filter((m) => m === 'up' || m === 'down' || m === 'zoomIn' || m === 'zoomOut'); if (pv.length) cand = pv; }
+      else { const pv = cand.filter((m) => m !== 'up' && m !== 'down'); if (pv.length) cand = pv; }
+      if (prev && opposite[prev] && cand.includes(opposite[prev]) && rnd() < 0.55) o.motion = opposite[prev];
+      else o.motion = cand.length ? cand[Math.floor(rnd() * cand.length)] : motions[0];
+    }
+    if (k === 0 && has('zoomIn')) { o.motion = 'zoomIn'; o.amt = 0.8; }
+    if (k === shots.length - 1 && has('zoomOut')) { o.motion = 'zoomOut'; o.amt = 0.8; }
+    prev = o.motion;
+  });
+  if (!trans.length) return out;
+  const pickKind = (kind, prevT) => {
+    let list = trans.filter((t) => CR.TRANS_KIND[t] === kind);
+    if (!list.length) list = trans.filter((t) => t !== 'fadeblack' || kind === 'soft');
+    if (!list.length) list = trans;
+    const l2 = list.filter((t) => t !== prevT);
+    const L = l2.length ? l2 : list;
+    return L[Math.floor(rnd() * L.length)];
+  };
+  let prevT = null;
+  for (let k = 0; k + 1 < shots.length; k++) {
+    const a = shots[k], b = shots[k + 1];
+    const lim = Math.min(a.t1 - a.t0, b.t1 - b.t0) / 1.6;
+    let kind = null;
+    if (a.sec !== b.sec) kind = b.sec === 'chorus' ? 'punch' : (b.sec === 'calm' || b.sec === 'outro') ? 'soft' : 'medium';
+    else if (a.burst || b.burst) kind = null;
+    else if (a.sec === 'chorus') kind = rnd() < 0.15 ? 'punch' : null;
+    else if (a.sec === 'verse') kind = rnd() < 0.35 ? 'medium' : null;
+    else kind = rnd() < 0.75 ? 'soft' : null;
+    if (st.mood === 'calm' && !kind && rnd() < 0.5) kind = 'soft';
+    if (!kind) continue;
+    let ty = pickKind(kind, prevT);
+    if (ty === 'fadeblack' && a.sec === b.sec) ty = pickKind('soft', 'fadeblack');
+    const want = kind === 'soft' ? CR.clamp(beatLen * (b.sec === 'calm' || b.sec === 'outro' ? 2 : 1.5), 0.4, 1.6)
+      : kind === 'medium' ? CR.clamp(beatLen, 0.3, 0.9) : CR.clamp(beatLen * 0.5, 0.2, 0.45);
+    const d = Math.min(want, lim);
+    if (d < 0.18) continue;
+    out[k].trans = ty; out[k].tdur = CR.round(d, 3);
+    prevT = ty;
   }
-  idx.push(S);
-  return { bounds: idx.map((k) => CR.round(grid[k], 3)), end: CR.round(end, 3), beatLen, note };
+  return out;
 };
 
 /**
@@ -705,16 +900,23 @@ CR.buildAuto = function (st) {
   if (st.order === 'date') photos.sort((a, b) => (a.taken || 0) - (b.taken || 0) || a.name.localeCompare(b.name, 'ko', { numeric: true }));
   else if (st.order === 'name') photos.sort((a, b) => a.path.localeCompare(b.path, 'ko', { numeric: true }));
   else { for (let i = photos.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [photos[i], photos[j]] = [photos[j], photos[i]]; } }
+  const A = CR.arrange(photos.length, st.ana, { mood: st.mood, length: st.length }, CR.rng(st.seed || 1)); // 만들기 창 미리보기와 같은 컷
+  if (A.used < photos.length) {
+    // 사진이 너무 많으면 고르게 골라 써요 (순서는 그대로)
+    const pick = [];
+    for (let k = 0; k < A.used; k++) pick.push(photos[Math.floor(k * photos.length / A.used)]);
+    photos = pick;
+  }
   const n = photos.length;
-  const A = CR.arrange(n, st.ana, { mood: st.mood, length: st.length });
-  const segs = A.bounds.slice(1).map((b, i) => b - A.bounds[i]);
+  const segs = A.shots.map((x) => x.t1 - x.t0);
+  const fx = CR.planEffects(A.shots, photos, Object.assign({}, st, { beatLen: A.beatLen }), rnd);
   const P = CR.newProject();
   P.name = (st.titleOn && st.title.trim()) || st.folderName || '사진 영상';
   P.aspect = st.aspect; P.fit = 'fit';
   P.bgBlur = !!st.bgBlur; P.photoFrame = !!st.frame;
   P.beatFx = { pulse: st.beat.includes('pulse'), flash: st.beat.includes('flash'), shake: st.beat.includes('shake') };
-  P.auto = { folder: st.folder, folderName: st.folderName, music: st.music.path, style: st.style, mood: st.mood, order: st.order, length: st.length,
-    motions: st.motions, trans: st.trans, color: st.color, beat: st.beat, seed: st.seed, note: A.note };
+  P.auto = { v: 2, folder: st.folder, folderName: st.folderName, music: st.music.path, style: st.style, mood: st.mood, order: st.order, length: st.length,
+    motions: st.motions, trans: st.trans, color: st.color, beat: st.beat, seed: st.seed, note: A.note, total: st.photos.length };
   photos.forEach((ph) => {
     const m = { id: 'm' + CR.uid(), path: ph.path };
     CR.applyProbe(m, ph);
@@ -723,51 +925,35 @@ CR.buildAuto = function (st) {
   const mm = { id: 'm' + CR.uid(), path: st.music.path };
   CR.applyProbe(mm, st.music);
   P.media.push(mm);
-  // 넘기기 길이: 박자 길이에 맞춰 (잔잔하면 길게, 신나면 짧게)
-  const tBase = CR.clamp(A.beatLen * ({ calm: 1.5, normal: 1, upbeat: 0.5 }[st.mood] || 1), 0.25, 1.0);
-  const pick = (list, prev) => {
-    if (!list.length) return null;
-    if (list.length === 1) return list[0];
-    let x;
-    do { x = list[Math.floor(rnd() * list.length)]; } while (x === prev);
-    return x;
-  };
-  const tr = [];
-  let prevT = null;
-  for (let i = 0; i < n - 1; i++) {
-    const lim = Math.min(segs[i], segs[i + 1]) / 1.6;
-    if (!st.trans.length || lim < 0.2) { tr.push(0); continue; }
-    tr.push(Math.min(tBase, lim));
-  }
-  tr.push(0);
-  let prevM = null;
+  // 클립 길이 = 컷 + 앞뒤 넘기기의 절반 (넘기기가 박자 경계 가운데에 오게)
   photos.forEach((ph, i) => {
-    const m = P.media[i];
-    const before = i > 0 ? tr[i - 1] : 0;
-    const d = segs[i] + before / 2 + tr[i] / 2;
-    const c = CR.appendClipTo(P, m, d);
-    c.motion = st.motions.length ? pick(st.motions, prevM) : 'none';
-    prevM = c.motion;
+    const before = i > 0 ? fx[i - 1].tdur : 0;
+    const d = segs[i] + before / 2 + fx[i].tdur / 2;
+    const c = CR.appendClipTo(P, P.media[i], d);
+    c.motion = fx[i].motion; c.motionAmt = fx[i].amt;
     c.filter = st.color || 'none';
-    if (tr[i] > 0) { const ty = pick(st.trans, prevT); prevT = ty; c.trans = { type: ty, dur: CR.round(tr[i], 3) }; }
+    c.role = { sec: A.shots[i].sec, burst: !!A.shots[i].burst };
+    if (fx[i].trans) c.trans = { type: fx[i].trans, dur: fx[i].tdur };
     if (st.dates && ph.taken) {
       const dt = new Date(ph.taken);
-      const s0 = A.bounds[i] + (i === 0 ? 0 : 0), s1 = A.bounds[i + 1];
       P.texts.push({ id: 't' + CR.uid(), kind: 'caption', text: dt.getFullYear() + '. ' + (dt.getMonth() + 1) + '. ' + dt.getDate() + '.',
-        start: CR.round(s0, 2), end: CR.round(s1, 2), pos: 'br', size: 's', box: false });
+        start: CR.round(A.bounds[i], 2), end: CR.round(A.bounds[i + 1], 2), pos: 'br', size: 's', box: false });
     }
   });
-  if (n) { P.clips[0].fadeIn = 0.6; P.clips[n - 1].fadeOut = Math.min(1.5, segs[n - 1] / 2); }
+  if (n) { P.clips[0].fadeIn = CR.round(Math.min(0.8, segs[0] / 3), 2); P.clips[n - 1].fadeOut = CR.round(Math.min(2, segs[n - 1] / 2), 2); }
   if (st.titleOn && st.title.trim()) {
-    const e = A.bounds.find((b) => b >= 2.5) || Math.min(3, A.end);
-    P.texts.unshift({ id: 't' + CR.uid(), kind: 'title', text: st.title.trim(), start: 0, end: CR.round(Math.min(e, 4.5, A.end), 2), pos: 'center', size: 'l', box: false });
+    // 제목은 도입 구간 동안 (길어야 5초)
+    const intro = A.sections[0];
+    const e = intro && intro.type === 'intro' ? Math.min(intro.end, 5) : (A.bounds.find((b) => b >= 2.5) || 3);
+    P.texts.unshift({ id: 't' + CR.uid(), kind: 'title', text: st.title.trim(), start: 0, end: CR.round(Math.min(e, 5, A.end), 2), pos: 'center', size: 'l', box: false });
   }
   const musicEnd = Math.min(st.music.duration, A.end);
+  const cutEarly = musicEnd < st.music.duration - 0.5;
   P.audio.push({ id: 'a' + CR.uid(), mediaId: mm.id, start: 0, in: 0, out: CR.round(musicEnd, 3), volume: 0.8, fadeIn: 0,
-    fadeOut: musicEnd < st.music.duration - 0.5 ? 2.5 : 1.5,
-    beats: { bpm: st.ana.bpm, beats: st.ana.beats, downbeats: st.ana.downbeats, energy: st.ana.energy, climax: st.ana.climax } });
+    fadeOut: cutEarly ? CR.round(Math.min(3, A.beatLen * 8), 2) : 1.5,
+    beats: { bpm: st.ana.bpm, beats: st.ana.beats, downbeats: st.ana.downbeats, energy: st.ana.energy, climax: st.ana.climax, sections: A.sections } });
   P.thumb = photos[0] && photos[0].thumb;
-  return { P, segs, A, trans: tr };
+  return { P, segs, A, trans: fx.map((x) => x.tdur) };
 };
 
 CR.appendClipTo = function (P, m, dur) {
@@ -777,20 +963,32 @@ CR.appendClipTo = function (P, m, dur) {
   return c;
 };
 
-/** 같은 컷 · 같은 길이로 움직임 · 넘기기만 새로 뽑아요 */
+/** 같은 컷으로 움직임 · 넘기기만 새로 뽑아요 (구간 흐름은 그대로) */
 CR.reshuffle = function () {
   const a = CR.P && CR.P.auto;
   if (!a) return;
-  const rnd = CR.rng((Date.now() & 0xffff) + 7);
-  const pick = (list, prev) => { if (!list.length) return null; if (list.length === 1) return list[0]; let x; do { x = list[Math.floor(rnd() * list.length)]; } while (x === prev); return x; };
+  const rnd = CR.rng((Date.now() & 0xffffff) + 7);
+  const L = CR.layout();
+  const clips = L.list;
+  const shots = [], photos = [];
+  clips.forEach((c, i) => {
+    const t0 = L.starts[i] + (i > 0 ? L.trans[i - 1] / 2 : 0), t1 = L.end(i) - L.trans[i] / 2;
+    const role = c.role || { sec: 'verse', burst: false };
+    shots.push({ t0, t1, sec: role.sec, burst: role.burst });
+    const m = CR.media(c.mediaId) || {};
+    photos.push({ width: m.width, height: m.height });
+  });
+  const TB = CR.timelineBeats();
+  const g = TB.beats.slice(1).map((b, i) => b - TB.beats[i]).sort((x, y) => x - y);
+  const fx = CR.planEffects(shots, photos, { motions: a.motions, trans: a.trans, mood: a.mood, beatLen: g.length ? g[g.length >> 1] : 0.55 }, rnd);
   CR.edit('효과 다시 섞기', () => {
-    let pm = null, pt = null;
-    CR.kept().forEach((c) => {
-      const m = CR.media(c.mediaId);
-      if (!m || m.kind !== 'image') return;
-      if (a.motions.length) { c.motion = pick(a.motions, pm); pm = c.motion; }
-      if (c.trans && a.trans.length) { c.trans.type = pick(a.trans, pt); pt = c.trans.type; }
+    // 컷 위치를 그대로 두려고, 넘기기 길이가 바뀐 만큼 클립 길이를 맞춰요
+    clips.forEach((c, i) => {
+      const before = i > 0 ? fx[i - 1].tdur : 0;
+      c.out = CR.round(c.in + (shots[i].t1 - shots[i].t0) * (c.speed || 1) + (before / 2 + fx[i].tdur / 2) * (c.speed || 1), 3);
+      c.motion = fx[i].motion; c.motionAmt = fx[i].amt;
+      c.trans = fx[i].trans ? { type: fx[i].trans, dur: fx[i].tdur } : null;
     });
   });
-  CR.toast('움직임과 넘기기를 새로 섞었어요', { action: CR.undo });
+  CR.toast('같은 흐름으로 움직임 · 넘기기를 새로 골랐어요', { action: CR.undo });
 };
