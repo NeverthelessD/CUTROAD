@@ -193,7 +193,12 @@ p = {"v": 1, "id": "smoketest01", "name": "시험 프로젝트", "mode": "full",
 json.dump(p, open(out, "w"), ensure_ascii=False)
 PY
 printf '{"appearance":"dark","autoSave":true,"autoUpdate":false,"exportPreset":"hd","openOnStart":"smoketest01","ui":{}}' > "$SUP/settings.json"
+# 1.2.0 이하가 남긴 이전 버전 보관본 (Spotlight 에 같은 이름 앱이 둘 보이던 원인)
+rm -rf "$SUP/backup" "$SUP/backup.noindex"; mkdir -p "$SUP/backup"
+ditto "$APPDIR" "$SUP/backup/CUTROAD.app"; printf '1.0.0' > "$SUP/backup/CUTROAD.app/Contents/Resources/version.txt"
 launch; check "A1 앱을 열면 엔진이 준비됨" ping_ok
+check "A1b 이전 버전 보관본을 Spotlight 가 안 찾는 폴더(backup.noindex)로 옮김" bash -c "test -d '$SUP/backup.noindex/CUTROAD.app' && test ! -e '$SUP/backup'"
+check "A1c 옮긴 뒤에도 '이전 버전으로 되돌리기'가 보임" bash -c "curl -fs -H 'x-token: $(tok)' http://127.0.0.1:$(port)/api/poll | grep -q '\"backupVersion\":\"1.0.0\"'"
 check "A2 엔진이 Dock 앱 방식으로 켜짐(shell=native)" bash -c "curl -fs -H 'x-token: $(tok)' http://127.0.0.1:$(port)/api/ping | grep -q '\"shell\":\"native\"'"
 check "A3 주소가 47931" test "$(port)" = "47931"
 N=$(curl -fs -H "x-token: $(tok)" "http://127.0.0.1:$(port)/api/projects" | python3 -c "import json,sys; print(len(json.load(sys.stdin)['projects']))" 2>/dev/null)

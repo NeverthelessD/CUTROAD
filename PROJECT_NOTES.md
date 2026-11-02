@@ -60,6 +60,9 @@ docs/                     guide.html → CUTROAD_사용가이드.png
 - 엔진 주소 47931 (MSROAD 47917 과 겹치지 않게).
 
 ## 작업 기록
+- 2026-11-02 v1.2.1 — 사용자 제보: Spotlight 에 CUTROAD 가 둘(응용 프로그램 + 백업 폴더). 이전 버전 보관본(되돌리기용)을
+  Support/backup → Support/backup.noindex 로 옮기고(.noindex = Spotlight 가 찾지 않음), 옮길 때 · 업데이트 · 되돌리기 뒤
+  lsregister -u 로 '다음으로 열기' 목록에서도 빼요. 엔진이 켜질 때 예전 backup 폴더를 알아서 옮겨요(migrateBackup).
 - 2026-11-02 v1.2.0 — 사용자 요청: 자동 편집이 너무 똑같다 → 사람이 만든 것처럼.
   · CR.sections: 마디별 소리 크기 변화(앞뒤 4마디 평균 차 > 0.12, 4~16마디)로 구간을 나누고 도입/전개/절정/쉬어 가기/마무리로 분류.
   · CR.arrange: 구간마다 컷 길이 묶음(CR.PATTERNS, 예: 절정 [2,2,4,2,2,4] · [1,1,2,2,2,4]) → 자연스러운 컷 →
