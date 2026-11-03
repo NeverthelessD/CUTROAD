@@ -109,7 +109,7 @@ CR.setMode = function (mode) {
 CR.renderToolbar = function () {
   const tb = CR.V.toolbar;
   tb.innerHTML = '';
-  const logo = h('button', { class: 'logo', title: '처음 화면으로 (⌘O)', style: { border: 'none', background: 'transparent', padding: '0 6px 0 0' }, onclick: () => CR.goHome() },
+  const logo = h('button', { class: 'logo', title: CR.T('처음 화면으로 (⌘O)'), style: { border: 'none', background: 'transparent', padding: '0 6px 0 0' }, onclick: () => CR.goHome() },
     CR.logoSVG(), CR.word());
   if (CR.quick()) {
     CR.put(tb, logo, CR.modeSwitch(), h('div', { class: 'grow' }),
@@ -124,8 +124,8 @@ CR.renderToolbar = function () {
     h('button', { class: 'btn', onclick: () => CR.openCaptions() }, I('mic'), '자동 자막'),
     h('button', { class: 'btn', onclick: () => CR.pickImport('audio') }, I('music'), '배경음악'),
     h('div', { class: 'vsep' }),
-    h('button', { class: 'btn icon ghost', title: '실행 취소 (⌘Z)', 'aria-label': '실행 취소', disabled: !CR.hist.undo.length, onclick: () => CR.undo() }, I('undo')),
-    h('button', { class: 'btn icon ghost', title: '다시 실행 (⇧⌘Z)', 'aria-label': '다시 실행', disabled: !CR.hist.redo.length, onclick: () => CR.redo() }, I('redo')),
+    h('button', { class: 'btn icon ghost', title: CR.T('실행 취소 (⌘Z)'), 'aria-label': '실행 취소', disabled: !CR.hist.undo.length, onclick: () => CR.undo() }, I('undo')),
+    h('button', { class: 'btn icon ghost', title: CR.T('다시 실행 (⇧⌘Z)'), 'aria-label': '다시 실행', disabled: !CR.hist.redo.length, onclick: () => CR.redo() }, I('redo')),
     h('div', { class: 'grow' }),
     h('span', { class: 'chip wide-only' }, CR.resLabel()),
     h('button', { class: 'btn icon ghost', title: '설정', 'aria-label': '설정', onclick: () => CR.openSettings() }, I('gear')),
@@ -284,7 +284,7 @@ CR.renderMedia = function () {
         e.preventDefault();
         CR.menu(e.clientX, e.clientY, [
           { label: '타임라인에 넣기', icon: 'plus', run: () => it.querySelector('.add').click() },
-          { label: 'Finder에서 보기', icon: 'folder', run: () => CR.native('reveal', { path: m.path }) },
+          { label: CR.T('Finder에서 보기'), icon: 'folder', run: () => CR.native('reveal', { path: m.path }) },
           { label: '목록에서 빼기', icon: 'trash', danger: true, run: () => {
             if (used) return CR.toast('타임라인에서 쓰고 있어서 뺄 수 없어요');
             CR.edit('미디어 빼기', () => { CR.P.media = CR.P.media.filter((x) => x.id !== m.id); });
@@ -492,7 +492,7 @@ CR.inspectProject = function (body) {
       h('div', null, h('small', null, '길이'), h('b', null, CR.short(L.total))),
       h('div', null, h('small', null, '클립'), h('b', null, String(L.list.length))),
       h('div', null, h('small', null, '글자'), h('b', null, String(P.texts.length)))),
-    h('p', { class: 'hint' }, '타임라인에서 클립 · 글자 · 배경음악을 누르면 여기서 자세히 바꿀 수 있어요.\nSpace 재생 · ⌘B 자르기 · ⌫ 지우기 · ⌘Z 되돌리기'));
+    h('p', { class: 'hint' }, CR.T('타임라인에서 클립 · 글자 · 배경음악을 누르면 여기서 자세히 바꿀 수 있어요.\nSpace 재생 · ⌘B 자르기 · ⌫ 지우기 · ⌘Z 되돌리기')));
 };
 
 // ---------------------------------------------------------------- 컷 편집만 아래쪽
@@ -505,10 +505,10 @@ CR.renderQuick = function () {
   const sel = CR.S.sel;
   const selClip = sel && sel.type === 'clip' && CR.findSel(sel);
   CR.put(box, host, h('div', { class: 'qactions' },
-    h('button', { class: 'btn big solid', onclick: () => CR.split() }, I('scissors'), '여기서 자르기 ', h('span', { class: 'kbd', style: { color: 'inherit', opacity: .7 } }, '⌘B')),
+    h('button', { class: 'btn big solid', onclick: () => CR.split() }, I('scissors'), '여기서 자르기 ', h('span', { class: 'kbd', style: { color: 'inherit', opacity: .7 } }, CR.T('⌘B'))),
     selClip && selClip.removed
       ? h('button', { class: 'btn big', onclick: () => CR.restoreClip(selClip.id) }, I('restore'), '선택한 조각 되살리기')
-      : h('button', { class: 'btn big', disabled: !selClip, onclick: () => CR.deleteSel() }, I('trash'), '선택한 조각 지우기 ', h('span', { class: 'kbd' }, '⌫')),
+      : h('button', { class: 'btn big', disabled: !selClip, onclick: () => CR.deleteSel() }, I('trash'), '선택한 조각 지우기 ', h('span', { class: 'kbd' }, CR.T('⌫'))),
     h('button', { class: 'btn big ghost', disabled: !CR.hist.undo.length, onclick: () => CR.undo() }, I('undo'), '되돌리기'),
     h('button', { class: 'btn big ghost', title: '말소리가 없는 부분 찾기', onclick: () => {
       const list = CR.findSilences();
@@ -536,7 +536,7 @@ CR.status = function () {
   } else {
     info = '클립 ' + L.list.length + '개 · 길이 ' + CR.human(L.total);
   }
-  const saved = CR.S.settings.autoSave === false ? (CR.S.saved ? '저장됨' : '저장 안 됨 · ⌘S') : (CR.S.saved ? '자동 저장됨' : '저장 중…');
+  const saved = CR.S.settings.autoSave === false ? (CR.S.saved ? '저장됨' : CR.T('저장 안 됨 · ⌘S')) : (CR.S.saved ? '자동 저장됨' : '저장 중…');
   s.append(h('span', null, nameBtn, ' · ' + saved + ' · ' + info), h('span', { class: 'made' }, 'made by. Nevertheless_D'));
 };
 
@@ -570,9 +570,9 @@ CR.renderHome = async function () {
       h('button', { class: 'btn big', style: { height: '42px', fontSize: '14px', borderColor: 'var(--accent)', fontWeight: 600, marginTop: '2px' }, onclick: () => CR.openAutoMake() },
         I('photo'), '사진 + 음악으로 영상 만들기')),
     h('div', { class: 'keys' },
-      h('span', null, h('span', { class: 'kbd', style: { color: 'var(--sub)' } }, '⌘N'), ' 새 프로젝트'),
-      h('span', null, h('span', { class: 'kbd', style: { color: 'var(--sub)' } }, '⌘I'), ' 가져오기'),
-      h('span', null, h('span', { class: 'kbd', style: { color: 'var(--sub)' } }, '⌘,'), ' 설정'),
+      CR.WIN ? null : h('span', null, h('span', { class: 'kbd', style: { color: 'var(--sub)' } }, CR.T('⌘N')), ' 새 프로젝트'),
+      h('span', null, h('span', { class: 'kbd', style: { color: 'var(--sub)' } }, CR.T('⌘I')), ' 가져오기'),
+      h('span', null, h('span', { class: 'kbd', style: { color: 'var(--sub)' } }, CR.T('⌘,')), ' 설정'),
       h('div', { class: 'grow' }),
       h('button', { class: 'btn ghost', style: { height: '26px', fontSize: '12px' }, onclick: () => CR.openSettings() }, I('gear'), '설정')));
   const right = h('div', { class: 'right' }, h('h2', null, '최근 프로젝트'), recent);

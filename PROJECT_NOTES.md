@@ -3,7 +3,7 @@
 
 # CUTROAD — 프로젝트 노트
 
-가볍고 간단한 영상 편집기. macOS (Apple Silicon). made by. Nevertheless_D
+가볍고 간단한 영상 편집기. macOS (Apple Silicon) · Windows 10/11 (1.3.0~). made by. Nevertheless_D
 사용자는 개발자가 아니에요. 한국어로 쉽게 설명하고, 터미널 사용을 요구하지 말 것. 결과물은 더블클릭으로 쓸 수 있게.
 
 ---
@@ -22,6 +22,8 @@
 - [ ] 7. 사용자 맥에서 확인 (자동 자막 권한 창 · 실제 영상)
 - [x] 8. 1.1 시안 확정: 사진 + 음악으로 영상 만들기 (스타일 7 · 효과 모음) — 2026-10-31
 - [x] 9. 1.1.0 맥 시험 통과(41/41) · 출시 (2026-10-31)
+- [x] 10. Windows 판 (1.3.0): 엔진이 영상 처리(Go + ffmpeg · whisper) · 화면 안 파일 고르기 · Wine 시험 (2026-11-03)
+- [ ] 11. 사용자 Windows PC 에서 확인 (PC 보호 창 · 영상 도구 받기 · 실제 내보내기 속도 · 자동 자막)
 
 ## 구조
 
@@ -38,7 +40,23 @@ app/shell/TestTools.swift 시험용 명령 (--test-sample · --test-export · --
 engine/                   Go 엔진: main.go(경로 · 설정 · 프로젝트 · /api/media) · projects.go · update.go · supervise.go · diag.go
 engine/web/               화면: index.html · css/app.css · js/{util,model,player,timeline,panels,dialogs,main}.js · fonts/
 scripts/                  build-mac.sh · ci-mac.sh · smoke-mac.sh · release.sh · publish-download.sh · feed.py · guide.py
-docs/                     guide.html → CUTROAD_사용가이드.png
+docs/                     guide.html → CUTROAD_사용가이드.png · guide-win.html → CUTROAD_Windows_사용가이드.png (scripts/guide.py)
+
+Windows 판 (1.3.0~, 엔진이 영상 처리 — CR.native → POST /api/native)
+engine/launcher_windows.go  CUTROAD.exe 실행기: 엔진 복사(%LOCALAPPDATA%\CUTROAD\bin) · 켜기 · Edge/Chrome 앱 창
+engine/platform.go          isWindows · uiOS(CUTROAD_FAKE_OS) · engineNative(CUTROAD_NATIVE=engine)
+engine/nat.go               /api/native 나누기 · 작업(Job) · 화면 안 파일 고르기 /api/fs/* · 끌어다 놓기 /api/drop
+engine/tools.go             ffmpeg 8.0.1(고정 · sha256, 처음 켤 때) · whisper-cli(exe 안) · 받아쓰기 모델 ggml-small(처음 쓸 때)
+engine/media.go             probe(ffprobe) · 썸네일(키프레임) · 파형 · 미리보기 사본(HEVC · PCM → 720p H.264)
+engine/photos.go            사진 폴더 · 정보(EXIF 방향 · 날짜) · 미리보기 JPG, HEIC 는 ffmpeg
+engine/beats.go             박자 찾기 (Photos.swift Beats 와 같은 계산)
+engine/plan.go              spec → 클립 · 시간 계산 · 박자 효과 · 움직임 (Render.swift Plan 과 같음)
+engine/render.go            장면 그리기 · 넘기기 · MP4(libx264) · GIF(palette) · 컷 편집만(키프레임이면 복사) · 소리 필터
+engine/imgops.go · text.go  그림 연산(이동 · 흐림 · 색 행렬 · 섞기) · 글자(IBM Plex Sans KR Bold, assets/)
+engine/captions.go          자동 자막: 영상 소리 → 16kHz WAV → whisper-cli -ml 1 -sow → 줄 묶기(Captions.swift 와 같은 규칙)
+engine/web/js/win.js        Windows 화면: 고르기 창 · 끌어다 놓기 · 영상 도구 준비 막대 · 단축키 Ctrl 표시(CR.T)
+scripts/build-win.sh        CUTROAD.exe(go-winres 아이콘) → releases/CUTROAD-win-<v>.zip · latest-win.json · download/CUTROAD-Windows.zip
+scripts/build-whisper-win.sh whisper.cpp → engine/assets/whisper-cli.exe (MinGW 정적, 시스템 DLL 만 씀)
 ```
 
 ## 결정 사항
@@ -60,6 +78,19 @@ docs/                     guide.html → CUTROAD_사용가이드.png
 - 엔진 주소 47931 (MSROAD 47917 과 겹치지 않게).
 
 ## 작업 기록
+- 2026-11-03 v1.3.0 — 사용자 요청: 영상 편집 프로그램 Windows 용. 사용자 결정: 영상 도구(ffmpeg)는 처음 켤 때 자동으로 받기,
+  자동 자막은 처음 쓸 때 정확한 모델(약 490MB) 받기. 맥 판은 그대로(엔진만 같이 씀, 맥에는 글꼴 · whisper 를 넣지 않음).
+  · 맥의 Swift 영상 처리를 Go 로 옮김: 장면마다 같은 순서(움직임 → 흐린 배경 → 블러 → 색감 → 필름 → 페이드 → 넘기기 10 → 박자 효과 → 글자),
+    영상은 ffmpeg 가 클립별로 잘라 RGBA 로 보내고, 결과는 ffmpeg libx264(bt709, 비트레이트 = 맥과 같은 식) · GIF 는 palettegen/paletteuse.
+  · 소리: ffmpeg 필터(atrim · atempo · volume 식으로 페이드/넘기기 크로스페이드 · adelay · amix normalize=0 · apad).
+  · 컷 편집만: 모든 컷이 키프레임에서 시작하고 형식이 같으면 concat 복사('원본 그대로'), 아니면 원래 크기로 다시 만듦.
+  · whisper.cpp 공식 Windows 판은 VC++ 런타임이 필요해서 MinGW 정적 빌드로 exe 안에 넣음(3.9MB). v1.9.4~ 는 공식 zip 이 없음.
+  · Edge/Chrome 은 HEVC · PCM 을 못 열 수 있어서 /api/media 가 미리보기 사본(720p H.264)을 만들어 줌.
+  · Edge 앱 창에서 Ctrl+N · Ctrl+Shift+N 은 브라우저가 가져가서 새 프로젝트 단축키는 Windows 에서 안 보여 줌.
+  · 시험: 리눅스(실제 ffmpeg · whisper) 내보내기 5종(효과 · 사진 세로 · GIF · 컷 편집 복사/다시 만들기) 장면 그림 확인,
+    자동 자막(한국어 espeak · 영어 jfk), 화면(고르기 창 · 내보내기 · 자막 · 단축키 · 사진 만들기). Wine 에서 실제 CUTROAD.exe:
+    ffmpeg 설치 · probe(HEVC · HEIC · 한글 경로) · 썸네일 · 파형 · 박자 · 미리보기 사본 · 내보내기 · 자동 자막(모델 → whisper) 통과.
+  · 속도(이 서버 2코어): 1080p 12초 단순 = 13.7초, 효과 많은 10초 = 40초. 보통 PC(8코어)는 이보다 빨라요.
 - 2026-11-02 v1.2.1 — 사용자 제보: Spotlight 에 CUTROAD 가 둘(응용 프로그램 + 백업 폴더). 이전 버전 보관본(되돌리기용)을
   Support/backup → Support/backup.noindex 로 옮기고(.noindex = Spotlight 가 찾지 않음), 옮길 때 · 업데이트 · 되돌리기 뒤
   lsregister -u 로 '다음으로 열기' 목록에서도 빼요. 엔진이 켜질 때 예전 backup 폴더를 알아서 옮겨요(migrateBackup).

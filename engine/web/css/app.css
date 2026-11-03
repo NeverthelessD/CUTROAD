@@ -420,3 +420,31 @@ select.pick { appearance: none; -webkit-appearance: none; padding-right: 30px; b
 .track.beats .sec.outro { background: color-mix(in srgb, var(--tLine) 16%, transparent); }
 .automake .flow { display: flex; gap: 2px; align-items: center; height: 22px; }
 .automake .flow span { height: 20px; border-radius: 4px; font-size: 10px; font-weight: 600; color: var(--sub); display: flex; align-items: center; justify-content: center; overflow: hidden; white-space: nowrap; min-width: 0; }
+
+/* ---------- Windows: 파일 · 폴더 고르기 창 (화면 안) ---------- */
+.picker .pbody { flex: 1; min-height: 0; display: grid; grid-template-columns: 190px 1fr; border-top: 1px solid var(--line); }
+.picker .pside { padding: 12px 10px; border-right: 1px solid var(--line); overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.picker .plab { font-size: 11px; font-weight: 700; color: var(--dim); padding: 10px 8px 4px; }
+.picker .pplace { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border-radius: 7px; border: none; background: transparent; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+.picker .pplace:hover { background: var(--field); }
+.picker .pplace.on { background: var(--field); color: var(--accent); font-weight: 600; }
+.picker .pplace svg, .picker .prow svg { width: 16px; height: 16px; flex: none; }
+.picker .pmain { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.picker .pcrumb { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.picker .ppath { font-family: var(--mono); font-size: 12px; color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.picker .plist { flex: 1; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; }
+.picker .prow { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 0 10px; border-radius: 7px; border: none; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.picker .prow:hover { background: var(--field); }
+.picker .prow.on { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.picker .prow.dir svg { color: var(--sub); }
+.picker .prow .pn { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.picker .prow .ps { font-family: var(--mono); font-size: 11px; color: var(--dim); }
+@media (max-width: 720px) { .picker .pbody { grid-template-columns: 1fr; } .picker .pside { display: none; } }
+
+/* ---------- Windows: 처음 켤 때 영상 도구 준비 ---------- */
+.toolsbox { position: fixed; left: 50%; bottom: 46px; transform: translateX(-50%); z-index: 90; width: min(460px, calc(100vw - 32px));
+  padding: 16px 18px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line2); box-shadow: 0 12px 40px rgba(0,0,0,.35); display: flex; flex-direction: column; gap: 8px; }
+.toolsbox p { margin: 0; color: var(--sub); font-size: 12.5px; }
+.toolsbox .bar { height: 6px; border-radius: 3px; background: var(--field); overflow: hidden; }
+.toolsbox .bar > div { height: 100%; background: var(--accent); transition: width .3s; }
+.toolsbox .btn { align-self: flex-start; }

@@ -136,10 +136,10 @@ CR.renderTimeline = function (host) {
 
   const sel = CR.S.sel;
   const bar = h('div', { class: 'tlbar' },
-    h('button', { class: 't', title: '자르기 (⌘B)', onclick: () => CR.split() }, I('scissors'), '자르기 ', h('span', { class: 'kbd' }, '⌘B')),
+    h('button', { class: 't', title: CR.T('자르기 (⌘B)'), onclick: () => CR.split() }, I('scissors'), '자르기 ', h('span', { class: 'kbd' }, CR.T('⌘B'))),
     h('button', { class: 't', title: '선택한 클립 뒤에 트랜지션 넣기', onclick: () => CR.addTransHere() }, I('trans'), '트랜지션'),
     h('button', { class: 't' + (CR.S.silences ? ' on' : ''), title: '말소리가 없는 부분 찾기', onclick: () => CR.toggleSilences() }, I('silence'), '무음 구간 찾기'),
-    h('button', { class: 't', title: '선택한 것 지우기 (⌫)', onclick: () => CR.deleteSel(), disabled: !sel }, I('trash'), '지우기'),
+    h('button', { class: 't', title: CR.T('선택한 것 지우기 (⌫)'), onclick: () => CR.deleteSel(), disabled: !sel }, I('trash'), '지우기'),
     h('div', { class: 'grow' }),
     h('span', { class: 'zoomlab' }, '확대'),
     (() => {

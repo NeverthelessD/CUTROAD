@@ -1,9 +1,11 @@
-// CUTROAD — 가벼운 영상 편집기 (macOS, Apple Silicon)
+// CUTROAD — 가벼운 영상 편집기 (macOS Apple Silicon · Windows 10/11)
 // made by. Nevertheless_D
 //
 // 이 엔진이 하는 일: 앱 화면(web/) 보여 주기 · 프로젝트 저장 · 설정 · 영상/소리 파일을 화면에 보내기(미리보기용) ·
-// 자동 업데이트 · 진단 기록. 영상 처리(내보내기 · 파형 · 썸네일 · 자동 자막)는 앱 껍데기(app/shell, Swift)가 맥 내장
-// 기능(AVFoundation · Speech)으로 해요.
+// 자동 업데이트 · 진단 기록.
+// 영상 처리(내보내기 · 파형 · 썸네일 · 자동 자막)는
+//   맥: 앱 껍데기(app/shell, Swift)가 맥 내장 기능(AVFoundation · Speech)으로 해요.
+//   Windows: 이 엔진이 ffmpeg(처음 켤 때 받아요) · whisper(자동 자막을 처음 쓸 때 받아요)로 해요 (nat*.go, render*.go).
 package main
 
 import (
@@ -55,6 +57,7 @@ type App struct {
 
 	upd      *Updater
 	projects *Projects
+	nat      *Nat // Windows: 엔진이 하는 영상 처리 (nat.go)
 
 	lastVis  atomic.Int64
 	lastSeen atomic.Int64
@@ -72,10 +75,19 @@ func env(k string) string { return os.Getenv("CUTROAD_" + k) }
 
 func main() {
 	log.SetFlags(log.LstdFlags)
+	if launcherMode() {
+		runLauncher()
+		return
+	}
 	home, _ := os.UserHomeDir()
 	support := env("SUPPORT")
 	if support == "" {
-		if runtime.GOOS == "darwin" {
+		if isWindows {
+			support = filepath.Join(os.Getenv("LOCALAPPDATA"), "CUTROAD")
+			if os.Getenv("LOCALAPPDATA") == "" {
+				support = filepath.Join(home, "AppData", "Local", "CUTROAD")
+			}
+		} else if runtime.GOOS == "darwin" {
 			support = filepath.Join(home, "Library", "Application Support", "CUTROAD")
 		} else {
 			support = filepath.Join(home, ".cutroad")
@@ -100,6 +112,9 @@ func main() {
 	touch()
 	app.upd = NewUpdater(support)
 	app.projects = NewProjects(filepath.Join(support, "projects"))
+	if engineNative() {
+		app.nat = NewNat(support)
+	}
 
 	go heartbeat(support)
 	ln := listen(env("PORT"), env("PORT_WAIT") == "1")
@@ -202,15 +217,15 @@ func (a *App) settingsPath() string { return filepath.Join(a.support, "settings.
 func (a *App) loadSettings() {
 	home, _ := os.UserHomeDir()
 	a.settings = Settings{Appearance: "system", AutoSave: true, AutoUpdate: true, ExportPreset: "hd",
-		ExportDir: filepath.Join(home, "Movies"), UI: map[string]any{}}
+		ExportDir: defaultExportDir(home), UI: map[string]any{}}
 	if b, err := os.ReadFile(a.settingsPath()); err == nil {
 		_ = json.Unmarshal(b, &a.settings)
 	}
 	if a.settings.UI == nil {
 		a.settings.UI = map[string]any{}
 	}
-	if a.settings.ExportDir == "" {
-		a.settings.ExportDir = filepath.Join(home, "Movies")
+	if a.settings.ExportDir == "" || !dirExists(a.settings.ExportDir) && engineNative() {
+		a.settings.ExportDir = defaultExportDir(home)
 	}
 }
 
@@ -243,6 +258,9 @@ func (a *App) settingsJSON() map[string]any {
 		"home":         home,
 		"build":        build,
 		"platform":     runtime.GOOS + "/" + runtime.GOARCH,
+		"os":           uiOS(),
+		"engineNative": engineNative(),
+		"sep":          string(filepath.Separator),
 	}
 }
 
@@ -262,6 +280,10 @@ func (a *App) routes() http.Handler {
 				return
 			}
 			b, _ := webFiles.ReadFile("web/index.html")
+			// Windows: 화면이 처음부터 'Windows 모드'(엔진이 영상 처리 · 앱 안 파일 고르기 · Ctrl 단축키)로 시작하게
+			if engineNative() {
+				b = []byte(strings.Replace(string(b), "<html", `<html data-os="`+uiOS()+`" data-engine-native="1"`, 1))
+			}
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.Header().Set("Cache-Control", "no-store")
 			w.Write(b)
@@ -326,7 +348,11 @@ func (a *App) routes() http.Handler {
 		writeJSON(w, map[string]any{"ok": true})
 	})
 	api("/api/poll", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, map[string]any{"build": build, "update": a.upd.State(), "shell": env("SHELL")})
+		out := map[string]any{"build": build, "update": a.upd.State(), "shell": env("SHELL")}
+		if a.nat != nil {
+			out["tools"] = a.nat.tools.State()
+		}
+		writeJSON(w, out)
 	})
 	api("/api/crash", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"ok": true, "report": crashReport(a.support)})
@@ -376,6 +402,10 @@ func (a *App) routes() http.Handler {
 
 	// 미리보기용 영상 · 소리 파일 (가져온 파일만, 이 맥 안에서만)
 	api("/api/media", a.handleMedia)
+	// Windows: 앱 껍데기 대신 엔진이 하는 일 (파일 정보 · 썸네일 · 파형 · 내보내기 · 자동 자막 · 파일 고르기)
+	if a.nat != nil {
+		a.nat.routes(api)
+	}
 	// 자막 파일(.srt) 저장 — 내보낸 영상 옆에
 	api("/api/write-text", func(w http.ResponseWriter, r *http.Request) {
 		var in struct {
@@ -495,6 +525,14 @@ func (a *App) handleMedia(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not allowed", http.StatusForbidden)
 		return
 	}
+	if a.nat != nil {
+		if px := a.nat.proxyFor(p); px != "" { // Windows: 브라우저가 못 여는 영상(HEVC 등)은 미리보기용 사본으로
+			p, ct = px, "video/mp4"
+		}
+	}
+	if ct == "video/quicktime" && engineNative() {
+		ct = "video/mp4" // Edge · Chrome 은 MOV 를 mp4 로 알려 줘야 잘 열어요
+	}
 	f, err := os.Open(p)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
@@ -594,4 +632,35 @@ func crashReport(support string) string {
 		}
 	}
 	return strings.Join(parts, "\n\n")
+}
+
+// defaultExportDir: 내보낸 영상을 저장할 기본 폴더 (맥: 동영상 = Movies, Windows: 동영상 = Videos)
+func defaultExportDir(home string) string {
+	if isWindows || uiOS() == "windows" {
+		return filepath.Join(home, "Videos")
+	}
+	return filepath.Join(home, "Movies")
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	tmp := dst + ".part"
+	out, err := os.Create(tmp)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := out.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return os.Rename(tmp, dst)
 }

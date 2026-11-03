@@ -47,7 +47,7 @@ addEventListener('keydown', (e) => {
   const native = CR.hasNative; // 앱 안에서는 메뉴가 처리하는 단축키(⌘N · ⌘O · ⌘I · ⌘E · ⌘, · ⌘1 · ⌘2)는 메뉴에 맡겨요
   const stop = () => { e.preventDefault(); e.stopPropagation(); };
   if (CR.S.view === 'home') {
-    if (!native && cmd && k === 'n') { stop(); CR.startNew(); }
+    if (!native && !CR.WIN && cmd && k === 'n') { stop(); CR.startNew(); }
     if (!native && cmd && k === 'N') { stop(); CR.openAutoMake(); }
     return;
   }
@@ -107,7 +107,7 @@ CR.pollUpdate = async function () {
 };
 
 // 브라우저에서 화면만 시험할 때 쓰는 가짜 앱 기능 (CUTROAD 앱 안에서는 쓰이지 않아요)
-if (!CR.hasNative) {
+if (!CR.hasNative && !CR.engineNative) {
   const fakePeaks = (seed, n) => { const a = []; let s = seed; for (let i = 0; i < n; i++) { s = (s * 9301 + 49297) % 233280; const q = (i % 400) > 300 ? 0.005 : 0.15 + 0.6 * (s / 233280); a.push(q); } return a; };
   CR.mock = {
     probe: async (m) => ({ items: m.paths.map((p, i) => {
@@ -153,6 +153,7 @@ if (!CR.hasNative) {
   } else {
     CR.go('home');
   }
+  CR.watchTools();
   CR.pollUpdate();
   setInterval(CR.pollUpdate, 60000);
   try { const c = await CR.api('/api/crash'); if (c.report) console.warn(c.report); } catch (e) { /* */ }

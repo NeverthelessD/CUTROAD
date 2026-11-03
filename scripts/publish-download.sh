@@ -6,6 +6,7 @@
 #
 #   scripts/publish-download.sh [처음 설치용 맥 zip]
 #     - 맥 zip 을 주면 (release.sh 가 dist/CUTROAD.zip 을 넘겨요) download/CUTROAD.zip 으로 바꿔 넣어요
+#     - releases/latest-win.json 이 있으면 업데이트용 exe + Windows 가이드로 download/CUTROAD-Windows.zip 을 새로 만들어요
 #   그다음 커밋 · 푸시하면 끝. 받는 주소(버전이 바뀌어도 그대로):
 #     https://github.com/NeverthelessD/CUTROAD/raw/main/download/CUTROAD.zip
 set -euo pipefail
@@ -36,8 +37,26 @@ PY
   cp "$MAC_ZIP" "download/$NAME.zip"
 fi
 
+if [ -f releases/latest-win.json ]; then
+  WZIP="releases/$(python3 -c "import json;print(json.load(open('releases/latest-win.json'))['zip'])")"
+  python3 - "$WZIP" "download/$NAME-Windows.zip" "$NAME" "docs/${NAME}_Windows_사용가이드.png" <<'PY'
+import os, sys, zipfile
+src, out, name, guide = sys.argv[1:5]
+with zipfile.ZipFile(src) as s:
+    exe = s.read(f"{name}.exe")
+    zi = s.getinfo(f"{name}.exe")
+tmp = out + ".part"
+with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+    info = zipfile.ZipInfo(f"{name}/{name}.exe", zi.date_time); info.compress_type = zipfile.ZIP_DEFLATED
+    z.writestr(info, exe)
+    if os.path.exists(guide):
+        z.write(guide, f"{name}/{os.path.basename(guide)}")
+os.replace(tmp, out)
+print("✔ Windows zip 만들기 (앱 + 사용 가이드)")
+PY
+fi
 
 # download/ 에는 최신판만: 정해진 이름 말고는 모두 지워요
-find download -mindepth 1 -maxdepth 1 ! -name "$NAME.zip" -exec rm -rf {} +
+find download -mindepth 1 -maxdepth 1 ! -name "$NAME.zip" ! -name "$NAME-Windows.zip" -exec rm -rf {} +
 [ -f "download/$NAME.zip" ] || { echo "✖ download/$NAME.zip 이 없어요 — 맥 처음 설치용 zip 을 넘겨 주세요" >&2; exit 1; }
 echo "✔ download/: $(ls download | tr '\n' ' ')— 커밋 · 푸시하면 '앱 받기' 링크가 새 버전을 줘요"

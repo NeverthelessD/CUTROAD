@@ -14,6 +14,7 @@ CR.modal = function (dlg, opt) {
     opt.onClose && opt.onClose();
   };
   const key = (e) => {
+    if (CR.pickerOpen && CR.pickerOpen()) return;
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
   };
   addEventListener('keydown', key, true);
@@ -171,7 +172,7 @@ CR.openExport = function (forced) {
       st.msgEl = h('span', null, '준비 중…');
       body.appendChild(h('div', { class: 'prog' }, h('div', { class: 'pl' }, st.msgEl, st.pctEl), h('div', { class: 'bar', role: 'progressbar', 'aria-label': '내보내기 진행률' }, st.barEl)));
     }
-    dlg.appendChild(h('div', { class: 'df' }, h('span', { class: 'note' }, quick ? '다시 인코딩하지 않아서 아주 빨라요' : '맥의 하드웨어 가속으로 빠르게 만들어요'),
+    dlg.appendChild(h('div', { class: 'df' }, h('span', { class: 'note' }, quick ? (CR.WIN ? '자른 곳이 원본과 맞으면 다시 인코딩하지 않아서 아주 빨라요' : '다시 인코딩하지 않아서 아주 빨라요') : (CR.WIN ? '이 PC 에서 바로 만들어요' : '맥의 하드웨어 가속으로 빠르게 만들어요')),
       h('div', { class: 'actions' },
         st.busy ? h('button', { class: 'btn', onclick: () => { if (st.job) CR.native('cancelJob', { id: st.job }); } }, '취소')
           : h('button', { class: 'btn', onclick: () => close() }, '닫기'),
@@ -187,9 +188,9 @@ CR.openExport = function (forced) {
     const r = st.result;
     CR.put(body, h('div', { class: 'donebox' }, h('div', { class: 'ok' }, I('check')),
       h('div', { class: 'tx' }, h('b', null, r.name), h('small', null, CR.bytes(r.size) + ' · ' + CR.human(r.seconds) + ' 걸렸어요' + (r.note === '다시 인코딩' ? ' · 원본 형식이 MP4에 맞지 않아 다시 만들었어요' : '') + (st.srt ? ' · 자막 파일도 저장했어요' : '')))));
-    dlg.appendChild(h('div', { class: 'df' }, h('span', { class: 'note' }, CR.folderName(r.path.replace(/\/[^/]*$/, '')) + ' 폴더에 저장했어요'),
+    dlg.appendChild(h('div', { class: 'df' }, h('span', { class: 'note' }, CR.folderName(CR.dirName(r.path)) + ' 폴더에 저장했어요'),
       h('div', { class: 'actions' },
-        h('button', { class: 'btn', onclick: () => CR.native('reveal', { path: r.path }) }, I('folder'), 'Finder에서 보기'),
+        h('button', { class: 'btn', onclick: () => CR.native('reveal', { path: r.path }) }, I('folder'), CR.T('Finder에서 보기')),
         h('button', { class: 'btn', onclick: () => CR.native('openFile', { path: r.path }) }, I('play'), '열기'),
         h('button', { class: 'btn primary', onclick: () => close() }, '닫기'))));
   };
@@ -236,7 +237,14 @@ CR.folderName = function (p) {
   if (p === home + '/Desktop') return '데스크탑';
   if (p === home + '/Downloads') return '다운로드';
   if (p === home + '/Documents') return '문서';
-  return p.split('/').filter(Boolean).pop() || p;
+  if (CR.WIN) {
+    const sep = '\\';
+    if (p === home + sep + 'Videos') return '동영상';
+    if (p === home + sep + 'Desktop') return '바탕 화면';
+    if (p === home + sep + 'Downloads') return '다운로드';
+    if (p === home + sep + 'Documents') return '문서';
+  }
+  return CR.baseName(p);
 };
 
 // ---------------------------------------------------------------- 자동 자막
@@ -246,6 +254,7 @@ CR.openCaptions = function () {
   const L = CR.timing(CR.kept());
   if (!L.list.length) return CR.toast('타임라인에 영상이 없어요. 먼저 영상을 넣어 주세요');
   const st = { lang: 'ko-KR', maxLen: 16, busy: false, lines: null, error: '', denied: false };
+  if (CR.WIN) CR.native('speechStatus').then((a) => { st.needModel = !!a.needModel; st.modelMB = a.modelMB; if (!st.busy && dlg.isConnected) draw(); }).catch(() => {});
   let close;
   const dlg = h('div', { class: 'dlg' });
   const draw = () => {
@@ -290,7 +299,7 @@ CR.openCaptions = function () {
       })));
     }
     const existing = CR.P.texts.filter((x) => x.kind === 'caption').length;
-    dlg.appendChild(h('div', { class: 'df' }, h('span', { class: 'note' }, '맥에 들어 있는 받아쓰기 기능을 사용해요'),
+    dlg.appendChild(h('div', { class: 'df' }, h('span', { class: 'note' }, CR.WIN ? (st.needModel ? '처음 한 번 받아쓰기 모델(약 ' + (st.modelMB || 490) + 'MB)을 받아요 · 그다음부터는 이 PC 안에서만 받아써요' : '이 PC 안에서 받아써요 (인터넷 필요 없음)') : '맥에 들어 있는 받아쓰기 기능을 사용해요'),
       h('div', { class: 'actions' },
         st.busy ? h('button', { class: 'btn', onclick: () => { if (st.job) CR.native('cancelJob', { id: st.job }); } }, '취소') : null,
         !st.busy && st.lines ? h('button', { class: 'btn', onclick: run }, '다시 받아쓰기') : null,
@@ -344,6 +353,7 @@ CR.SHORTCUTS = [
   ['타임라인 확대 · 축소', '⌘+ · ⌘−'], ['전체 편집 · 컷 편집만', '⌘1 · ⌘2'],
   ['가져오기', '⌘I'], ['내보내기', '⌘E'], ['새 프로젝트', '⌘N'], ['처음 화면', '⌘O'], ['저장', '⌘S'], ['설정', '⌘,'],
 ];
+if (CR.WIN) CR.SHORTCUTS = CR.SHORTCUTS.filter(([, k]) => k !== '⌘N').map(([a, k]) => [a, CR.T(k)]);
 
 CR.openSettings = function (tab) {
   const st = { tab: tab || 'general' };
@@ -366,7 +376,7 @@ CR.openSettings = function (tab) {
       const auto = h('input', { type: 'checkbox', checked: S.autoSave !== false });
       auto.addEventListener('change', () => setS('autoSave', auto.checked));
       body.appendChild(h('div', { class: 'form' },
-        h('span', null, '화면 모드'), h('div', null, h('div', { class: 'seg' }, [['system', '맥 설정 따르기'], ['light', '라이트'], ['dark', '다크']].map(([k, label]) =>
+        h('span', null, '화면 모드'), h('div', null, h('div', { class: 'seg' }, [['system', CR.T('맥 설정 따르기')], ['light', '라이트'], ['dark', '다크']].map(([k, label]) =>
           h('button', { class: (S.appearance || 'system') === k ? 'on' : '', onclick: () => setS('appearance', k) }, label)))),
         h('span', null, '기본 내보내기'), h('div', null, preset),
         h('span', null, '내보낼 폴더'), h('div', null, h('button', { class: 'pick', style: { width: '240px' }, onclick: async () => {
@@ -401,7 +411,7 @@ CR.openSettings = function (tab) {
         h('div', null, h('div', { class: 'word', style: { fontSize: '26px' } }, 'CUT', h('b', null, 'ROAD')),
           h('div', { style: { color: 'var(--sub)', marginTop: '4px' } }, '가볍게 자르고, 붙이고, 바로 내보내는 영상 편집기'),
           h('div', { class: 'mono', style: { color: 'var(--dim)', fontSize: '12px', marginTop: '6px' } }, '버전 ' + (S.build || '') + ' · ' + (S.platform || '')))),
-      h('p', { class: 'hint' }, '영상 처리는 맥에 들어 있는 기능(AVFoundation · Core Image · 받아쓰기)으로 해요. 프로젝트는 이 맥에만 저장되고, 영상 파일은 원래 자리 그대로 써요.'),
+      h('p', { class: 'hint' }, CR.WIN ? '영상 처리는 이 PC 안에서 해요(영상 도구 ffmpeg · 받아쓰기 whisper). 프로젝트는 이 PC 에만 저장되고, 영상 파일은 원래 자리 그대로 써요.' : '영상 처리는 맥에 들어 있는 기능(AVFoundation · Core Image · 받아쓰기)으로 해요. 프로젝트는 이 맥에만 저장되고, 영상 파일은 원래 자리 그대로 써요.'),
       h('div', { class: 'actions' }, h('button', { class: 'btn', onclick: () => CR.native('diag').catch(() => window.open('/diag')) }, I('info'), '진단 정보 보기')),
       h('div', { style: { fontFamily: 'var(--brand)', color: 'var(--sub)', marginTop: '8px' } }, 'made by. Nevertheless_D'));
     }
@@ -441,7 +451,7 @@ CR.openAutoMake = function (prev) {
   const dlg = h('div', { class: 'dlg automake', style: { width: '960px' } });
 
   const loadFolder = async (dir) => {
-    st.folder = dir; st.folderName = dir.split('/').filter(Boolean).pop() || dir;
+    st.folder = dir; st.folderName = CR.baseName(dir);
     if (!st.title || !st.titleEdited) st.title = st.folderName;
     st.photos = []; st.scanning = '사진을 찾는 중…'; st.error = ''; draw();
     try {
