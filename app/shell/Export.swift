@@ -89,7 +89,7 @@ enum Exporter {
                 note = try writeQuick(plan, to: tmp, job: job)
             default:
                 let built = try Builder.build(plan, preset: preset)
-                try writeMP4(built, to: tmp, job: job, out: out, comp: plan.audioComp)
+                try writeMP4(built, to: tmp, job: job, out: out, audioComp: plan.audioComp)
             }
             if job.isCancelled { throw RenderError("취소했어요") }
             try FileManager.default.moveItem(at: tmp, to: dest)
@@ -135,8 +135,8 @@ enum Exporter {
 
     // MARK: MP4 (H.264 + AAC)
 
-    /// out: vbps · abps · codec(h264|hevc) 가 있으면 그 값으로 (용량 선택, 1.5.0). comp: 소리 고르게
-    static func writeMP4(_ built: Built, to url: URL, job: Job, out: [String: Any] = [:], comp: AudioComp? = nil) throws {
+    /// out: vbps · abps · codec(h264|hevc) 가 있으면 그 값으로 (용량 선택, 1.5.0). audioComp: 소리 고르게
+    static func writeMP4(_ built: Built, to url: URL, job: Job, out: [String: Any] = [:], audioComp: AudioComp? = nil) throws {
         let comp = built.composition
         let reader = try AVAssetReader(asset: comp)
         reader.timeRange = CMTimeRange(start: .zero, duration: ct(built.duration))
@@ -184,7 +184,7 @@ enum Exporter {
         vIn.expectsMediaDataInRealTime = false
         guard writer.canAdd(vIn) else { throw RenderError("영상 저장을 준비하지 못했어요") }
         writer.add(vIn)
-        let dyn = comp.map { Dynamics($0) }
+        let dyn = audioComp.map { Dynamics($0) }
         var aIn: AVAssetWriterInput?
         if aOut != nil {
             let i = AVAssetWriterInput(mediaType: .audio, outputSettings: [
