@@ -116,6 +116,7 @@ function openPicker(opt) {
 }
 
 CR.pickFiles = function (kind) {
+  if (kind === 'movie') return openPicker({ kind: 'movie', multi: true, title: '줄일 영상 고르기', sub: '용량을 줄일 영상을 골라 주세요 (여러 개 가능)', exts: 'MOV · MP4', okLabel: '고르기' });
   const music = kind === 'music' || kind === 'audio';
   return openPicker({ kind: music ? 'music' : 'video', multi: !music,
     title: music ? '배경음악 고르기' : '가져올 파일 고르기',

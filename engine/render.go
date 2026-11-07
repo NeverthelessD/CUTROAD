@@ -665,6 +665,9 @@ func (n *Nat) buildAudio(ctx context.Context, p *plan, includeBGM bool, from, to
 	} else {
 		mix += "anull,"
 	}
+	if includeBGM && p.audioComp != nil { // 소리 고르게 (내보내기만, 자동 자막은 원래 소리)
+		mix += p.audioComp.filter() + ","
+	}
 	fc = append(fc, mix+fmt.Sprintf("apad=whole_dur=%s,atrim=0:%s[aout]", ftoa(total), ftoa(total)))
 	graph := strings.Join(fc, ";")
 	full := append([]string{"-hide_banner", "-nostdin", "-v", "error", "-y"}, args...)
@@ -884,11 +887,18 @@ func (n *Nat) writeMP4(j *Job, p *plan, preset, tmp string) error {
 	j.set(0, "소리 준비 중")
 	audio := tmp + ".audio.m4a"
 	defer os.Remove(audio)
-	hasAudio, err := n.buildAudio(j.ctx, p, true, 0, total, audio, []string{"-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2"})
+	abps := 192000
+	if p.abps > 0 {
+		abps = max(64000, p.abps)
+	}
+	hasAudio, err := n.buildAudio(j.ctx, p, true, 0, total, audio, []string{"-c:a", "aac", "-b:a", strconv.Itoa(abps), "-ar", "48000", "-ac", "2"})
 	if err != nil {
 		return err
 	}
 	bitrate := int(math.Min(60_000_000, math.Max(2_000_000, float64(r.W*r.H*r.fps)*0.2)))
+	if p.vbps > 0 { // 용량 선택 (compress.js CR.sizePlan)
+		bitrate = max(80000, p.vbps)
+	}
 	enc := []string{}
 	if hasAudio {
 		enc = append(enc, "-i", audio)

@@ -129,8 +129,7 @@ enum Compressor {
             AVVideoAverageBitRateKey: vbps,
             AVVideoMaxKeyFrameIntervalKey: fps * 2,
             AVVideoExpectedSourceFrameRateKey: fps,
-            AVVideoDataRateLimitsKey: [max(vbps / 8 * 2, 50_000), 1], // 1초에 평균의 2배까지 (목표 크기를 크게 넘지 않게)
-        ]
+        ] // 목표 크기를 넘으면 화면(compress.js)이 비트레이트를 낮춰 한 번 더 만들어요
         if !hevc { comp[AVVideoProfileLevelKey] = AVVideoProfileLevelH264HighAutoLevel }
         let color: [String: Any] = [
             AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
@@ -143,9 +142,7 @@ enum Compressor {
             if withColor { s[AVVideoColorPropertiesKey] = color }
             return s
         }
-        var noLimit = comp
-        noLimit.removeValue(forKey: AVVideoDataRateLimitsKey)
-        let tries = [settings(comp, true), settings(noLimit, true), settings(noLimit, false)]
+        let tries = [settings(comp, true), settings(comp, false)]
         guard let ok = tries.first(where: { writer.canApply(outputSettings: $0, forMediaType: .video) }) else {
             throw RenderError(hevc ? "이 맥에서는 HEVC 로 만들 수 없어요. ‘더 작게 (HEVC)’를 끄고 다시 해 주세요" : "영상 저장을 준비하지 못했어요")
         }

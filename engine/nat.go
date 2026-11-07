@@ -110,6 +110,10 @@ func (n *Nat) dispatch(typ string, m map[string]any) (any, error) {
 		j := n.jobs.add("export")
 		go func() { defer recoverJob(j); n.runExport(spec, j) }()
 		return map[string]any{"id": j.id}, nil
+	case "compress":
+		j := n.jobs.add("compress")
+		go func() { defer recoverJob(j); n.runCompress(m, j) }()
+		return map[string]any{"id": j.id}, nil
 	case "captions":
 		spec, _ := m["spec"].(map[string]any)
 		j := n.jobs.add("captions")
@@ -299,6 +303,8 @@ func handleFsList(w http.ResponseWriter, r *http.Request) {
 	exts := importExts
 	if in.Kind == "music" {
 		exts = map[string]bool{".mp3": true, ".wav": true, ".m4a": true}
+	} else if in.Kind == "movie" { // 용량 줄이기: 영상만
+		exts = map[string]bool{".mov": true, ".mp4": true}
 	}
 	if err == nil {
 		for _, e := range ents {

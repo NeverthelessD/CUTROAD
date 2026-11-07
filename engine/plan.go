@@ -3,6 +3,7 @@ package main
 // 프로젝트 내용(spec) + 시간 계산 — app/shell/Render.swift 의 Plan 과 같은 계산 (= model.js 의 CR.timing)
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -192,6 +193,16 @@ func motionAt(m string, p, k float64) (s, dx, dy, rot float64) {
 	return 1, 0, 0, 0
 }
 
+// audioComp: 소리 고르게 값 (compress.js CR.AUDIO_COMP) — 내보낼 때 섞인 소리에 컴프레서 → 보정 → 리미터(-1dB)
+type audioComp struct{ threshold, ratio, attack, release, makeup float64 }
+
+// filter: ffmpeg 필터 (Compress.swift Dynamics 와 같은 값: 무릎 6dB, 두 채널 같이, 봉우리 기준)
+func (c *audioComp) filter() string {
+	db := func(v float64) string { return ftoa(math.Pow(10, v/20)) }
+	return fmt.Sprintf("acompressor=threshold=%s:ratio=%s:attack=%s:release=%s:makeup=%s:knee=2:detection=peak:link=maximum,alimiter=limit=0.891:attack=1:release=50:level=disabled",
+		db(math.Max(-60, c.threshold)), ftoa(math.Min(20, c.ratio)), ftoa(c.attack*1000), ftoa(c.release*1000), db(math.Max(0, math.Min(36, c.makeup))))
+}
+
 type plan struct {
 	clips              []clipSpec
 	audio              []audioSpec
@@ -200,6 +211,9 @@ type plan struct {
 	bgBlur, photoFrame bool
 	beatFx             beatFx
 	starts, trans      []float64
+	audioComp          *audioComp // 소리 고르게 (1.5.0)
+	maxShort           int        // 용량 선택: 결과의 짧은 변 최대 (0 = 그대로)
+	vbps, abps         int        // 용량 선택: 비트레이트 (0 = 기본)
 	vEnd               float64 // 영상(클립)이 끝나는 곳
 	total              float64 // 전체 길이 = 영상 끝, 또는 ‘영상 끝나도 계속’ 배경음악이 끝나는 곳 (model.js CR.spanOf)
 }
@@ -238,6 +252,13 @@ func newPlan(spec map[string]any) *plan {
 		}
 	}
 	p.beatFx = newBeatFx(spec["beatFx"])
+	if d, ok := spec["audioComp"].(map[string]any); ok {
+		p.audioComp = &audioComp{threshold: mNum(d, "threshold", -24), ratio: math.Max(1, mNum(d, "ratio", 3)), attack: math.Max(0.001, mNum(d, "attack", 0.01)),
+			release: math.Max(0.01, mNum(d, "release", 0.2)), makeup: mNum(d, "makeup", 6)}
+	}
+	if o, ok := spec["out"].(map[string]any); ok {
+		p.maxShort, p.vbps, p.abps = int(mNum(o, "maxShort", 0)), int(mNum(o, "vbps", 0)), int(mNum(o, "abps", 0))
+	}
 	p.timing()
 	return p
 }
@@ -296,6 +317,9 @@ func (p *plan) renderSize(preset string, shortSide int) (int, int) {
 		if asp == "1:1" {
 			short = 360
 		}
+	}
+	if p.maxShort > 0 && preset != "gif" {
+		short = min(short, max(240, p.maxShort))
 	}
 	switch asp {
 	case "9:16":
