@@ -1,0 +1,7 @@
+total 856
+-rw-r--r--   1 runner  staff   60379 Nov  7 13:52 바다 (작게).mp4
+-rw-r--r--   1 runner  staff   43989 Nov  7 13:52 세로 (작게).mp4
+drwxr-xr-x   6 runner  staff     192 Nov  7 13:52 .
+drwxr-xr-x  14 runner  staff     448 Nov  7 13:52 ..
+-rw-r--r--   1 runner  staff  188236 Nov  7 13:52 바다.mov
+-rw-r--r--   1 runner  staff  140401 Nov  7 13:52 세로.mp4

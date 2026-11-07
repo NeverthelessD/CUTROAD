@@ -1,0 +1,5 @@
+--- A 실행 중
+28997     1 S    /Applications/CUTROAD.app/Contents/MacOS/CUTROAD
+29037 28997 S    /Users/runner/Library/Application Support/CUTROAD/bin/cutroad-engine
+29039 29037 S    /Users/runner/Library/Application Support/CUTROAD/bin/cutroad-engine
+--- D 종료 뒤

@@ -1,0 +1,2 @@
+b40505b40a1335f9235f8c0c0270dc74cc620e18fa2cfc3a2e42dbe8fe045529  /Users/runner/work/CUTROAD/CUTROAD/ci-out/CUTROAD-1.5.0.zip
+1676e9ceb03b81905e725fa1c5781fa96009da4f9a19ecc14a4422170ab3636a  /Users/runner/work/CUTROAD/CUTROAD/ci-out/CUTROAD-first-install.zip

@@ -1,0 +1,2 @@
+IOServiceMatchingfailed for: AppleM2ScalerParavirtDriver
+{"error":"","id":"export-1-1794059552","kind":"export","message":"영상 만드는 중","progress":1,"result":{"name":"사진 컷.mp4","note":"다시 인코딩","path":"\/Users\/runner\/CUTROAD-test\/out\/사진 컷.mp4","seconds":6.8300579786300659,"size":525826},"state":"done"}

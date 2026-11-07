@@ -1,0 +1,10 @@
+total 6864
+-rw-r--r--   1 runner  staff  668728 Nov  7 13:51 여름 여행 (2).mp4
+-rw-r--r--   1 runner  staff  622421 Nov  7 13:51 여름 여행.mp4
+-rw-r--r--   1 runner  staff  331980 Nov  7 13:52 용량 작게.mp4
+-rw-r--r--   1 runner  staff  749749 Nov  7 13:51 음악 계속.mp4
+-rw-r--r--   1 runner  staff  185167 Nov  7 13:52 컷 편집.mp4
+drwxr-xr-x   9 runner  staff     288 Nov  7 13:52 .
+drwxr-xr-x  17 runner  staff     544 Nov  7 13:52 ..
+-rw-r--r--   1 runner  staff   24123 Nov  7 13:52 움짤.gif
+-rw-r--r--   1 runner  staff  807488 Nov  7 13:52 세로.mp4
