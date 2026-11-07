@@ -251,6 +251,8 @@ final class Bridge: NSObject, WKScriptMessageHandlerWithReply {
             reply(Jobs.shared.startExport(body["spec"] as? [String: Any] ?? [:]))
         case "captions":
             reply(Jobs.shared.startCaptions(body["spec"] as? [String: Any] ?? [:]))
+        case "compress":
+            reply(Jobs.shared.startCompress(body))
         case "job":
             reply(Jobs.shared.snapshot(body["id"] as? String ?? ""))
         case "cancelJob":
@@ -527,13 +529,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     func openFiles(kind: String, reply: @escaping ([String: Any]) -> Void) {
         let panel = NSOpenPanel()
         let audio = kind == "audio" || kind == "music"
+        let movie = kind == "movie"   // 용량 줄이기: 영상 파일만
         panel.allowsMultipleSelection = kind != "music"
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
-        panel.allowedContentTypes = (audio ? Media.audioExtensions : Media.allowedExtensions).compactMap { UTType(filenameExtension: $0) }
-        panel.message = audio ? "배경음악으로 쓸 소리 파일을 골라 주세요 (MP3 · WAV · M4A)"
+        panel.allowedContentTypes = (movie ? Media.videoExtensions : audio ? Media.audioExtensions : Media.allowedExtensions)
+            .compactMap { UTType(filenameExtension: $0) }
+        panel.message = movie ? "용량을 줄일 영상을 골라 주세요 (MOV · MP4 · 여러 개 골라도 돼요)"
+            : audio ? "배경음악으로 쓸 소리 파일을 골라 주세요 (MP3 · WAV · M4A)"
             : "가져올 영상 · 소리 · 사진을 골라 주세요 (MOV · MP4 · MP3 · WAV · M4A · JPG · PNG · HEIC)"
-        panel.prompt = audio ? "고르기" : "가져오기"
+        panel.prompt = movie || audio ? "고르기" : "가져오기"
         showMain()
         panel.beginSheetModal(for: window) { r in
             reply(["paths": r == .OK ? panel.urls.map { $0.path } : []])
@@ -654,6 +659,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         file.addItem(NSMenuItem.separator())
         file.addItem(item("가져오기…", "import", "i"))
         file.addItem(item("내보내기…", "export", "e"))
+        file.addItem(NSMenuItem.separator())
+        file.addItem(item("용량 줄이기 (영상 압축)…", "compress"))
         fileItem.submenu = file
 
         // 편집 메뉴: 글자 칸에서는 맥 기본 동작, 타임라인에서는 화면이 ⌘Z · ⌘B 등을 직접 처리해요

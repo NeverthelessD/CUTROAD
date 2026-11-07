@@ -7,6 +7,7 @@
 //   CUTROAD --test-waveform <파일>                     파형 개수
 //   CUTROAD --test-thumbs <파일>                       썸네일 개수
 //   CUTROAD --test-export <spec.json>                  내보내기 (화면에서 하는 것과 같은 길)
+//   CUTROAD --test-compress <spec.json>                용량 줄이기 (path · width · height · vbps · abps · codec)
 
 import AppKit
 import AVFoundation
@@ -104,6 +105,13 @@ enum TestTools {
                   let spec = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { print("spec 을 읽지 못했어요"); return 2 }
             let job = Jobs.shared.add("export")
             Exporter.run(spec, job)
+            let s = job.snapshot(); out(s)
+            return (s["state"] as? String) == "done" ? 0 : 1
+        case "--test-compress":
+            guard let p = a.first, let d = try? Data(contentsOf: URL(fileURLWithPath: p)),
+                  let spec = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { print("spec 을 읽지 못했어요"); return 2 }
+            let job = Jobs.shared.add("compress")
+            Compressor.run(spec, job)
             let s = job.snapshot(); out(s)
             return (s["state"] as? String) == "done" ? 0 : 1
         default:

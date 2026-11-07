@@ -92,6 +92,39 @@ check "X5b 영상이 끝나도 음악 계속 (결과 ${DK:-?}초, 10.5초여야 
 "$BIN" --test-frame "$M/out/음악 계속.mp4" 9 "$OUT/frame-keep-black.png"
 check "X5c 영상 뒤 검은 화면 장면 그림" test -s "$OUT/frame-keep-black.png"
 
+# 1.5.0: 용량 선택(비트레이트 · 짧은 변 720) + 소리 고르게 로 내보내기
+python3 - "$SPEC" > "$M/spec-size.json" <<'PY'
+import json, sys
+s = json.load(open(sys.argv[1]))
+s["out"].update({"name": "용량 작게", "vbps": 800000, "abps": 128000, "maxShort": 720, "codec": "h264"})
+s["audioComp"] = {"mode": "normal", "threshold": -24, "ratio": 3, "attack": 0.01, "release": 0.2, "makeup": 6}
+print(json.dumps(s, ensure_ascii=False))
+PY
+"$BIN" --test-export "$M/spec-size.json" > "$OUT/export-size.json" 2>&1; ES=$?; cat "$OUT/export-size.json"
+"$BIN" --test-probe "$M/out/용량 작게.mp4" > "$OUT/probe-size.json"; cat "$OUT/probe-size.json"
+check "X5d 용량 선택 · 소리 고르게 내보내기 (1280×720 · 소리 있음)" bash -c "test $ES = 0 && grep -q '\"width\":1280' '$OUT/probe-size.json' && grep -q '\"hasAudio\":true' '$OUT/probe-size.json'"
+
+echo "▶ Z. 용량 줄이기"
+mkdir -p "$M/z"
+cp "$M/바다.mov" "$M/z/바다.mov"; cp "$M/세로.mp4" "$M/z/세로.mp4"
+zspec() { python3 -c "import json,sys; print(json.dumps({'path': sys.argv[1], 'dir': sys.argv[2], 'name': sys.argv[3], 'width': int(sys.argv[4]), 'height': int(sys.argv[5]), 'vbps': int(sys.argv[6]), 'abps': 96000, 'codec': sys.argv[7], 'replace': sys.argv[8] if len(sys.argv) > 8 else ''}, ensure_ascii=False))" "$@"; }
+zspec "$M/z/바다.mov" "$M/z" "바다 (작게)" 320 180 300000 h264 > "$M/z1.json"
+"$BIN" --test-compress "$M/z1.json" > "$OUT/compress-1.json" 2>&1; Z1=$?; cat "$OUT/compress-1.json"
+"$BIN" --test-probe "$M/z/바다 (작게).mp4" > "$OUT/probe-z1.json"; cat "$OUT/probe-z1.json"
+ZD=$(dur_of "$M/z/바다 (작게).mp4")
+check "Z1 H.264 로 줄이기 (320×180 · 소리 있음 · 길이 ${ZD:-?}초)" bash -c "test $Z1 = 0 && grep -q '\"width\":320' '$OUT/probe-z1.json' && grep -q '\"height\":180' '$OUT/probe-z1.json' && grep -q '\"hasAudio\":true' '$OUT/probe-z1.json'"
+check "Z2 길이 그대로 (6초)" near "${ZD:-0}" 6 0.2
+check "Z3 원본은 그대로" test -s "$M/z/바다.mov"
+zspec "$M/z/세로.mp4" "$M/z" "세로 (작게)" 180 320 250000 hevc > "$M/z2.json"
+"$BIN" --test-compress "$M/z2.json" > "$OUT/compress-2.json" 2>&1; Z4=$?; cat "$OUT/compress-2.json"
+"$BIN" --test-probe "$M/z/세로 (작게).mp4" > "$OUT/probe-z2.json"; cat "$OUT/probe-z2.json"
+check "Z4 HEVC 로 세로 영상 줄이기 (180×320)" bash -c "test $Z4 = 0 && grep -q '\"width\":180' '$OUT/probe-z2.json' && grep -q '\"height\":320' '$OUT/probe-z2.json'"
+"$BIN" --test-frame "$M/z/세로 (작게).mp4" 1.5 "$OUT/frame-compress-v.png"
+zspec "$M/z/바다.mov" "$M/z" "바다 (작게)" 320 180 150000 h264 "$M/z/바다 (작게).mp4" > "$M/z3.json"
+"$BIN" --test-compress "$M/z3.json" > "$OUT/compress-3.json" 2>&1; Z5=$?; cat "$OUT/compress-3.json"
+check "Z5 목표에 맞춰 다시 만들면 같은 파일을 바꿈 ('(2)' 없음)" bash -c "test $Z5 = 0 && test ! -e '$M/z/바다 (작게) (2).mp4' && test -s '$M/z/바다 (작게).mp4'"
+ls -la "$M/z" > "$OUT/compress-files.txt"
+
 python3 - "$SPEC" vertical "세로" > "$M/spec-v.json" <<'PY'
 import json, sys
 s = json.load(open(sys.argv[1])); s["out"]["preset"] = sys.argv[2]; s["out"]["name"] = sys.argv[3]; print(json.dumps(s, ensure_ascii=False))

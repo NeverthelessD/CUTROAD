@@ -144,7 +144,7 @@ if (CR.engineNative) {
     e.preventDefault();
     depth = 0;
     window.cutroadDragHover && window.cutroadDragHover(false);
-    if (CR.modalOpen()) return;
+    if (CR.modalOpen() && !CR.onModalDrop) return;
     const ok = /\.(mov|mp4|mp3|wav|m4a|jpe?g|png|heic|heif)$/i;
     const all = [...e.dataTransfer.files];
     const files = all.filter((f) => ok.test(f.name));

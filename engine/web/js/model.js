@@ -503,6 +503,7 @@ CR.spec = function (opt) {
   if (opt.captions === 'none' || opt.captions === 'srt') texts = texts.filter((x) => x.kind !== 'caption');
   const out = { clips, audio, texts: texts.map((x) => ({ text: x.text, start: x.start, end: x.end, pos: x.pos, size: x.size, box: x.box })),
     aspect: P.aspect, fit: P.fit, bgBlur: !opt.plain && P.bgBlur, photoFrame: !opt.plain && P.photoFrame };
+  if (!opt.plain && P.audioComp && CR.AUDIO_COMP[P.audioComp]) out.audioComp = Object.assign({ mode: P.audioComp }, CR.AUDIO_COMP[P.audioComp]);
   const fx = P.beatFx || {};
   if (!opt.plain && (fx.pulse || fx.flash || fx.shake)) {
     const B = CR.timelineBeats();

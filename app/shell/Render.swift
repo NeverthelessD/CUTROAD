@@ -285,6 +285,8 @@ struct Plan {
     var bgBlur: Bool          // 사진 뒤 흐린 배경
     var photoFrame: Bool      // 사진 흰 액자
     var beatFx: BeatFx
+    var audioComp: AudioComp?  // 소리 고르게 (1.5.0)
+    var maxShort: Int = 0      // 용량 선택: 결과의 짧은 변을 이 값 이하로 (0 = 그대로)
     var starts: [Double] = []
     var trans: [Double] = []   // trans[i] = 클립 i 와 i+1 사이 트랜지션 길이
     var vEnd: Double = 0       // 영상(클립)이 끝나는 곳
@@ -299,6 +301,8 @@ struct Plan {
         bgBlur = (spec["bgBlur"] as? Bool) ?? false
         photoFrame = (spec["photoFrame"] as? Bool) ?? false
         beatFx = BeatFx(spec["beatFx"] as? [String: Any])
+        audioComp = AudioComp(spec["audioComp"])
+        maxShort = Int(num(spec["out"] as? [String: Any] ?? [:], "maxShort", 0))
         timing()
     }
 
@@ -336,6 +340,7 @@ struct Plan {
         case "gif": short = asp == "1:1" ? 360 : 270
         default: short = 1080
         }
+        if maxShort > 0, preset != "gif" { short = min(short, max(240, maxShort)) }
         func even(_ v: Double) -> CGFloat { CGFloat(Int((v / 2).rounded()) * 2) }
         switch asp {
         case "9:16": return CGSize(width: even(Double(short)), height: even(Double(short) * 16 / 9))

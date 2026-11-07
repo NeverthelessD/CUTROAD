@@ -452,3 +452,31 @@ select.pick { appearance: none; -webkit-appearance: none; padding-right: 30px; b
 .track.video .blackpad { position: absolute; top: 0; bottom: 0; border-radius: 6px; background: repeating-linear-gradient(135deg, #111 0 8px, #1c1c1c 8px 16px);
   border: 1px solid var(--line2); display: flex; align-items: center; justify-content: center; pointer-events: none; overflow: hidden; }
 .track.video .blackpad span { font-size: 11px; color: #9a9a9a; white-space: nowrap; }
+/* 용량 줄이기 (1.5.0) */
+.czopts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.czopts .num { flex: 0 0 auto; gap: 10px; min-width: 210px; }
+.czopts .btn.on { border-color: var(--accent); color: var(--accent); }
+.czopts .check { margin-left: auto; font-size: 13px; }
+.czlist { display: flex; flex-direction: column; gap: 6px; min-height: 120px; }
+.czempty { flex: 1; min-height: 150px; border: 1.5px dashed var(--line2); border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--sub); }
+.czempty svg { width: 26px; height: 26px; color: var(--dim); }
+.czempty small { color: var(--dim); font-size: 12px; }
+.czrow { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; background: var(--field); border: 1px solid transparent; }
+.czrow.on { border-color: var(--accent); }
+.czrow .cn { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.czrow .cn b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+.czrow .cn small { color: var(--dim); font-size: 11px; font-family: var(--mono); }
+.czrow .cz { font-size: 12px; font-family: var(--mono); color: var(--sub); white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
+.czrow .cz b { color: var(--text); }
+.czrow .cz small { color: var(--dim); }
+.czrow .cz.ok { color: var(--ok); } .czrow .cz.ok svg { width: 14px; height: 14px; }
+.czrow .cz.bad { color: var(--bad); font-family: inherit; white-space: normal; max-width: 300px; }
+.czrow .dim, .czrow .cz.dim { color: var(--dim); font-family: inherit; }
+.czrow .close { width: 26px; height: 26px; border-radius: 7px; border: none; background: transparent; color: var(--dim); display: inline-flex; align-items: center; justify-content: center; }
+.czrow .close svg { width: 14px; height: 14px; }
+.czprog { width: 220px; display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--sub); font-family: var(--mono); }
+.czprog .bar, .sizeopt .bar { height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.czprog .bar div { height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+.sizeopt { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sizeopt .num { flex: 0 0 auto; min-width: 150px; gap: 8px; }
+.sizeopt .check { margin-left: auto; font-size: 13px; }

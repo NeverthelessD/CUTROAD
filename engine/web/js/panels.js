@@ -490,6 +490,8 @@ CR.inspectProject = function (body) {
     P.media.some((m) => m.kind === 'image') ? field('사진', null,
       h('label', { class: 'check' }, (() => { const cb = h('input', { type: 'checkbox', checked: P.bgBlur }); cb.addEventListener('change', () => CR.edit('흐린 배경', () => { P.bgBlur = cb.checked; })); return cb; })(), '빈 곳은 사진을 흐리게 채우기'),
       h('label', { class: 'check' }, (() => { const cb = h('input', { type: 'checkbox', checked: P.photoFrame }); cb.addEventListener('change', () => CR.edit('흰 액자', () => { P.photoFrame = cb.checked; })); return cb; })(), '흰 액자 테두리')) : null,
+    field('소리 고르게 (오디오 컴프레서)', null, segPick(CR.AUDIO_COMP_NAMES, P.audioComp || '', (v) => CR.edit('소리 고르게', () => { if (v) P.audioComp = v; else delete P.audioComp; }))),
+    h('p', { class: 'hint' }, '작은 소리는 키우고 큰 소리는 눌러서 전체 소리 크기를 고르게 맞춰요. 말소리 · 음악이 들쭉날쭉할 때 좋아요. 미리보기에서도 바로 들려요.'),
     CR.timelineBeats().beats.length ? field('박자 효과', null, h('div', { class: 'chips2' }, CR.BEATFX.map(([k, label]) =>
       h('button', { class: P.beatFx[k] ? 'on' : '', onclick: () => CR.edit('박자 효과', () => { P.beatFx[k] = !P.beatFx[k]; }) }, label)))) : null,
     h('div', { class: 'facts', style: { padding: '10px 12px' } },
@@ -572,7 +574,8 @@ CR.renderHome = async function () {
           } catch (e) { CR.toast(e.message, { bad: true }); }
         } }, I('scissors'), '컷 편집만 하기')),
       h('button', { class: 'btn big', style: { height: '42px', fontSize: '14px', borderColor: 'var(--accent)', fontWeight: 600, marginTop: '2px' }, onclick: () => CR.openAutoMake() },
-        I('photo'), '사진 + 음악으로 영상 만들기')),
+        I('photo'), '사진 + 음악으로 영상 만들기'),
+      h('button', { class: 'btn big', style: { height: '38px', fontSize: '14px' }, onclick: () => CR.openCompress() }, I('shrink'), '용량 줄이기 (영상 압축)')),
     h('div', { class: 'keys' },
       CR.WIN ? null : h('span', null, h('span', { class: 'kbd', style: { color: 'var(--sub)' } }, CR.T('⌘N')), ' 새 프로젝트'),
       h('span', null, h('span', { class: 'kbd', style: { color: 'var(--sub)' } }, CR.T('⌘I')), ' 가져오기'),

@@ -78,11 +78,42 @@ CR.Player = {
       try {
         const src = this.ctx.createMediaElementSource(el);
         g = this.ctx.createGain();
-        src.connect(g).connect(this.ctx.destination);
+        src.connect(g).connect(this.bus() || this.ctx.destination);
         this.nodes.set(el, g);
       } catch (e) { return null; }
     }
     return g;
+  },
+
+  /** 모든 소리가 모이는 곳: 소리 고르게(오디오 컴프레서) → 보정 → 리미터(-1dB) → 스피커. 내보내기와 같은 값 (CR.AUDIO_COMP) */
+  bus() {
+    const ctx = this.ctx;
+    if (!ctx) return null;
+    if (!this.busIn) {
+      this.busIn = ctx.createGain();
+      this.comp = ctx.createDynamicsCompressor();
+      this.makeup = ctx.createGain();
+      this.lim = ctx.createDynamicsCompressor();
+      this.lim.threshold.value = -1; this.lim.knee.value = 0; this.lim.ratio.value = 20; this.lim.attack.value = 0.001; this.lim.release.value = 0.05;
+      this.comp.connect(this.makeup).connect(this.lim).connect(ctx.destination);
+      this.busIn.connect(ctx.destination);
+      this.busMode = '';
+    }
+    this.setComp();
+    return this.busIn;
+  },
+  setComp() {
+    if (!this.busIn) return;
+    const mode = CR.P && !CR.quick() && CR.AUDIO_COMP[CR.P.audioComp] ? CR.P.audioComp : '';
+    if (mode === this.busMode) return;
+    this.busMode = mode;
+    try { this.busIn.disconnect(); } catch (e) { /* 처음 */ }
+    if (!mode) { this.busIn.connect(this.ctx.destination); return; }
+    const c = CR.AUDIO_COMP[mode];
+    this.comp.threshold.value = c.threshold; this.comp.knee.value = 6; this.comp.ratio.value = c.ratio;
+    this.comp.attack.value = c.attack; this.comp.release.value = c.release;
+    this.makeup.gain.value = Math.pow(10, c.makeup / 20);
+    this.busIn.connect(this.comp);
   },
 
   setVol(el, v) {
@@ -183,6 +214,7 @@ CR.Player = {
   /** 지금 시각에 맞춰 영상 · 사진 · 소리 · 글자를 맞춰요 */
   apply(L) {
     if (!this.stage || !CR.P) return;
+    this.setComp();
     L = L || CR.layout();
     const t = CR.S.t;
     const playing = this.playing;

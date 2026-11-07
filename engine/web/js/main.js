@@ -15,7 +15,7 @@ window.cutroadDropped = function (paths, skipped) {
   document.getElementById('dropcover').classList.remove('on');
   if (skipped) CR.toast('지원하지 않는 파일 ' + skipped + '개는 건너뛰었어요 (MOV · MP4 · MP3 · WAV · M4A)', { bad: true });
   if (!paths || !paths.length) return;
-  if (CR.modalOpen()) return;
+  if (CR.modalOpen()) { if (CR.onModalDrop) CR.onModalDrop(paths); return; }
   if (CR.S.view === 'home' || !CR.P) CR.startNew(paths);
   else CR.importPaths(paths);
 };
@@ -31,6 +31,7 @@ window.cutroadMenu = function (id) {
     case 'export': if (CR.P) CR.openExport(); break;
     case 'settings': CR.openSettings(); break;
     case 'automake': CR.openAutoMake(); break;
+    case 'compress': CR.openCompress(); break;
     case 'shortcuts': CR.openSettings('keys'); break;
     case 'mode-full': if (CR.P) CR.setMode('full'); break;
     case 'mode-quick': if (CR.P) CR.setMode('quick'); break;
@@ -136,7 +137,9 @@ if (!CR.hasNative && !CR.engineNative) {
     speechStatus: async () => ({ status: 'authorized' }),
     export: async () => ({ id: 'x' }),
     captions: async () => ({ id: 'c' }),
-    job: async (m) => (m.id === 'c' ? { state: 'done', progress: 1, result: { lines: [{ text: '오늘은 바다 보러 왔어요', start: 0.8, end: 2.6 }, { text: '바람이 엄청 불어요', start: 3.1, end: 4.9 }] } }
+    compress: async (m) => { window.CR_MOCK_LAST = m; return { id: 'z:' + m.name + ':' + m.vbps + ':' + m.abps }; },
+    job: async (m) => (m.id.startsWith('z:') ? (() => { const [, n, v, a] = m.id.split(':'); return { state: 'done', progress: 1, result: { path: '/tmp/' + n + '.mp4', name: n + '.mp4', size: Math.round((+v + +a) * 30 / 8) } }; })()
+      : m.id === 'c' ? { state: 'done', progress: 1, result: { lines: [{ text: '오늘은 바다 보러 왔어요', start: 0.8, end: 2.6 }, { text: '바람이 엄청 불어요', start: 3.1, end: 4.9 }] } }
       : { state: 'done', progress: 1, result: { path: '/tmp/여름 여행.mp4', name: '여름 여행.mp4', size: 120e6, seconds: 25 } }),
     cancelJob: async () => ({}),
     reveal: async () => ({}), openFile: async () => ({}),

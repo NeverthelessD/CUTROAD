@@ -89,7 +89,7 @@ enum Exporter {
                 note = try writeQuick(plan, to: tmp, job: job)
             default:
                 let built = try Builder.build(plan, preset: preset)
-                try writeMP4(built, to: tmp, job: job)
+                try writeMP4(built, to: tmp, job: job, out: out, comp: plan.audioComp)
             }
             if job.isCancelled { throw RenderError("취소했어요") }
             try FileManager.default.moveItem(at: tmp, to: dest)
@@ -135,7 +135,8 @@ enum Exporter {
 
     // MARK: MP4 (H.264 + AAC)
 
-    static func writeMP4(_ built: Built, to url: URL, job: Job) throws {
+    /// out: vbps · abps · codec(h264|hevc) 가 있으면 그 값으로 (용량 선택, 1.5.0). comp: 소리 고르게
+    static func writeMP4(_ built: Built, to url: URL, job: Job, out: [String: Any] = [:], comp: AudioComp? = nil) throws {
         let comp = built.composition
         let reader = try AVAssetReader(asset: comp)
         reader.timeRange = CMTimeRange(start: .zero, duration: ct(built.duration))
@@ -162,7 +163,13 @@ enum Exporter {
         writer.shouldOptimizeForNetworkUse = true
         let W = Int(built.renderSize.width), H = Int(built.renderSize.height)
         let bitrate = min(60_000_000, max(2_000_000, Int(Double(W * H * built.fps) * 0.2)))
-        let vIn = AVAssetWriterInput(mediaType: .video, outputSettings: [
+        let custom = num(out, "vbps", 0) > 0 || str(out, "codec", "h264") == "hevc"
+        let vIn: AVAssetWriterInput
+        if custom {
+            vIn = try Compressor.videoInput(writer, W: W, H: H, fps: built.fps, vbps: num(out, "vbps", 0) > 0 ? Int(num(out, "vbps", 0)) : bitrate,
+                                            hevc: str(out, "codec", "h264") == "hevc")
+        } else {
+            vIn = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: W,
             AVVideoHeightKey: H,
@@ -173,13 +180,15 @@ enum Exporter {
                 AVVideoExpectedSourceFrameRateKey: built.fps,
             ] as [String: Any],
         ])
+        }
         vIn.expectsMediaDataInRealTime = false
         guard writer.canAdd(vIn) else { throw RenderError("영상 저장을 준비하지 못했어요") }
         writer.add(vIn)
+        let dyn = comp.map { Dynamics($0) }
         var aIn: AVAssetWriterInput?
         if aOut != nil {
             let i = AVAssetWriterInput(mediaType: .audio, outputSettings: [
-                AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 2, AVEncoderBitRateKey: 192_000,
+                AVFormatIDKey: kAudioFormatMPEG4AAC, AVSampleRateKey: 48000, AVNumberOfChannelsKey: 2, AVEncoderBitRateKey: num(out, "abps", 0) > 0 ? max(64_000, Int(num(out, "abps", 0))) : 192_000,
             ])
             i.expectsMediaDataInRealTime = false
             if writer.canAdd(i) { writer.add(i); aIn = i }
@@ -201,12 +210,14 @@ enum Exporter {
                     if job.isCancelled || reader.status != .reading {
                         done = true; input.markAsFinished(); group.leave(); return
                     }
-                    guard let sb = output.copyNextSampleBuffer() else {
+                    guard var sb = output.copyNextSampleBuffer() else {
                         done = true; input.markAsFinished(); group.leave(); return
                     }
                     if video {
                         let t = CMSampleBufferGetPresentationTimeStamp(sb).seconds
                         if t.isFinite { job.set(progress: t / total * 0.99, message: "영상 만드는 중") }
+                    } else if let d = dyn, let p = d.process(sb) {
+                        sb = p
                     }
                     if !input.append(sb) {
                         done = true; input.markAsFinished(); group.leave(); return

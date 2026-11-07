@@ -64,6 +64,7 @@ CR.put = function (el, ...kids) {
 // 아이콘 (선 그림)
 const ICONS = {
   plus: '<path d="M12 5v14M5 12h14"/>',
+  shrink: '<path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/>',
   text: '<path d="M4 7V4h16v3M9 20h6M12 4v16"/>',
   mic: '<path d="M12 2a3 3 0 013 3v6a3 3 0 01-6 0V5a3 3 0 013-3z"/><path d="M19 10v1a7 7 0 01-14 0v-1M12 18v4"/>',
   music: '<path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 010 7"/>',

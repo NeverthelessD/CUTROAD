@@ -104,7 +104,13 @@ CR.openExport = function (forced) {
     dir: CR.S.settings.exportDir || '',
     captions: 'burn',
     busy: false,
+    size: (CR.S.settings.ui && CR.S.settings.ui.exportSize) || 'normal', // 용량: normal | kakao | size | light (1.5.0)
+    targetMB: 50,
+    hevc: false,
   };
+  const fps0 = (() => { const c = CR.kept()[0], m = c && CR.media(c.mediaId); const f = (m && m.kind === 'video' && m.fps) || 30;
+    return [24, 25, 30, 50, 60].reduce((b, x) => (Math.abs(x - f) < Math.abs(b - f) ? x : b), 30); })();
+  const sizePlan = (W, H, dur) => CR.sizePlan({ mode: st.size, dur, W, H, fps: fps0, targetMB: st.targetMB, hevc: st.hevc });
   const selC = CR.S.sel && CR.S.sel.type === 'clip' && CR.findSel(CR.S.sel);
   let ga = 0;
   if (selC) { const i = L.list.indexOf(selC); if (i >= 0) ga = L.starts[i]; }
@@ -153,16 +159,36 @@ CR.openExport = function (forced) {
         h('div', { class: 'seg' }, [['burn', '영상에 입히기'], ['srt', '자막 파일(.srt) 따로'], ['none', '넣지 않기']].map(([k, label]) =>
           h('button', { class: st.captions === k ? 'on' : '', onclick: () => { st.captions = k; draw(); } }, label)))));
     }
-    const [W, H] = CR.outSize(st.preset);
+    let [W, H] = CR.outSize(st.preset);
     const dur = st.preset === 'gif' ? st.range[1] - st.range[0] : quick ? L.total : CR.spanOf(CR.P, L.total);
-    const fps = 30;
+    const mp4 = !quick && st.preset !== 'gif';
+    let SP = null;
+    if (mp4) {
+      SP = sizePlan(W, H, dur);
+      W = SP.W; H = SP.H;
+      const opts = h('div', { class: 'sizeopt' }, h('span', { class: 'lab2' }, '용량'),
+        h('div', { class: 'seg' }, [['normal', '보통'], ['kakao', '카톡 보내기용'], ['size', '크기 정하기'], ['light', '조금만 줄이기']].map(([k, label]) =>
+          h('button', { class: st.size === k ? 'on' : '', disabled: st.busy, onclick: () => { st.size = k; draw(); } }, label))));
+      if (st.size === 'size') {
+        const inp = h('input', { type: 'text', value: String(st.targetMB), 'aria-label': '목표 크기', disabled: st.busy });
+        inp.addEventListener('change', () => { const v = parseFloat(inp.value); if (isFinite(v) && v > 0) st.targetMB = Math.round(v); draw(); });
+        inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') inp.blur(); });
+        opts.appendChild(h('label', { class: 'num' }, '최대', h('span', { style: { display: 'flex', gap: '3px', alignItems: 'center' } }, inp, h('em', null, 'MB'))));
+      }
+      if (!CR.WIN) {
+        const cb = h('input', { type: 'checkbox', checked: st.hevc, disabled: st.busy });
+        cb.addEventListener('change', () => { st.hevc = cb.checked; draw(); });
+        opts.appendChild(h('label', { class: 'check', title: '같은 화질로 더 작게 만들어요. 아주 오래된 기기나 일부 사이트에서는 안 열릴 수 있어요' }, cb, '더 작게 (HEVC)'));
+      }
+      body.appendChild(opts);
+    }
     const bytes = st.preset === 'gif' ? W * H * dur * 12 * 0.12 : st.preset === 'quick'
       ? CR.kept().reduce((s, c) => { const m = CR.media(c.mediaId); return s + (m && m.size && m.duration ? m.size * (c.out - c.in) / m.duration : 0); }, 0)
-      : (Math.min(60e6, Math.max(2e6, W * H * fps * 0.2)) + 192e3) * dur / 8;
+      : SP.est;
     const secs = st.preset === 'quick' ? Math.max(2, dur * 0.03) : st.preset === 'gif' ? dur * 1.2 : dur * (W * H > 4e6 ? 0.9 : 0.35);
     body.appendChild(h('div', { class: 'facts' },
       h('div', null, h('small', null, '해상도'), h('b', null, W + '×' + H)),
-      h('div', null, h('small', null, '형식'), h('b', null, st.preset === 'gif' ? 'GIF' : st.preset === 'quick' ? 'MP4 · 원본' : 'MP4 · H.264')),
+      h('div', null, h('small', null, '형식'), h('b', null, st.preset === 'gif' ? 'GIF' : st.preset === 'quick' ? 'MP4 · 원본' : st.hevc && !CR.WIN ? 'MP4 · HEVC' : 'MP4 · H.264')),
       h('div', null, h('small', null, '예상 크기'), h('b', null, bytes ? '약 ' + CR.bytes(bytes) : '—')),
       h('div', null, h('small', null, '예상 시간'), h('b', null, '약 ' + CR.human(Math.max(2, secs))))));
     if (st.error) body.appendChild(h('div', { class: 'errbox' }, st.error));
@@ -199,7 +225,12 @@ CR.openExport = function (forced) {
     if (!st.name.trim()) st.name = CR.P.name || 'CUTROAD';
     const spec = CR.spec({ plain: quick, captions: st.captions });
     spec.out = { preset: st.preset, dir: st.dir, name: st.name.trim(), range: st.range };
-    if (st.preset !== 'quick') CR.api('/api/settings', { exportPreset: st.preset }).then((s) => { CR.S.settings = s; }).catch(() => {});
+    if (!quick && st.preset !== 'gif' && (st.size !== 'normal' || (st.hevc && !CR.WIN))) {
+      const [W0, H0] = CR.outSize(st.preset);
+      const SP = sizePlan(W0, H0, CR.spanOf(CR.P, L.total));
+      Object.assign(spec.out, { vbps: SP.vbps, abps: SP.abps, maxShort: Math.min(SP.W, SP.H), codec: st.hevc && !CR.WIN ? 'hevc' : 'h264' });
+    }
+    if (st.preset !== 'quick') CR.api('/api/settings', { exportPreset: st.preset, ui: Object.assign({}, CR.S.settings.ui || {}, { exportSize: st.size }) }).then((s) => { CR.S.settings = s; }).catch(() => {});
     st.busy = true;
     draw();
     try {
