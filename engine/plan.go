@@ -10,18 +10,18 @@ import (
 )
 
 type clipSpec struct {
-	path, kind          string
-	inT, outT, speed    float64
-	volume              float64
-	fadeIn, fadeOut     float64
-	blur                float64
-	rotate              int
-	motion              string
-	motionAmt           float64
-	filter              string
-	w, h                float64
-	transType           string
-	transDur            float64
+	path, kind       string
+	inT, outT, speed float64
+	volume           float64
+	fadeIn, fadeOut  float64
+	blur             float64
+	rotate           int
+	motion           string
+	motionAmt        float64
+	filter           string
+	w, h             float64
+	transType        string
+	transDur         float64
 }
 
 func (c clipSpec) dur() float64  { return (c.outT - c.inT) / c.speed }
@@ -65,10 +65,10 @@ func newClipSpec(d map[string]any) clipSpec {
 }
 
 type audioSpec struct {
-	path                         string
-	start, inT, outT             float64
-	volume, fadeIn, fadeOut      float64
-	keep                         bool // 영상이 끝나도 계속 (뒤는 검은 화면) — 1.4.0
+	path                    string
+	start, inT, outT        float64
+	volume, fadeIn, fadeOut float64
+	keep                    bool // 영상이 끝나도 계속 (뒤는 검은 화면) — 1.4.0
 }
 
 func newAudioSpec(d map[string]any) audioSpec {
@@ -104,9 +104,9 @@ func newTextSpec(d map[string]any) textSpec {
 
 // beatFx: 박자 효과 (타임라인 시각 기준) — model.js 의 CR.beatFxAt() · Render.swift 의 BeatFx 와 같은 계산
 type beatFx struct {
-	pulse, flash, shake      bool
-	beats, flashes           []float64
-	climax, pulseIn          [][]float64
+	pulse, flash, shake bool
+	beats, flashes      []float64
+	climax, pulseIn     [][]float64
 }
 
 func newBeatFx(v any) beatFx {
@@ -131,7 +131,9 @@ func newBeatFx(v any) beatFx {
 	return b
 }
 
-func (b beatFx) any() bool { return (b.pulse || b.shake) && len(b.beats) > 0 || b.flash && len(b.flashes) > 0 }
+func (b beatFx) any() bool {
+	return (b.pulse || b.shake) && len(b.beats) > 0 || b.flash && len(b.flashes) > 0
+}
 
 func lastLE(a []float64, t float64) (float64, bool) {
 	i := sort.Search(len(a), func(i int) bool { return a[i] > t }) - 1
@@ -214,8 +216,8 @@ type plan struct {
 	audioComp          *audioComp // 소리 고르게 (1.5.0)
 	maxShort           int        // 용량 선택: 결과의 짧은 변 최대 (0 = 그대로)
 	vbps, abps         int        // 용량 선택: 비트레이트 (0 = 기본)
-	vEnd               float64 // 영상(클립)이 끝나는 곳
-	total              float64 // 전체 길이 = 영상 끝, 또는 ‘영상 끝나도 계속’ 배경음악이 끝나는 곳 (model.js CR.spanOf)
+	vEnd               float64    // 영상(클립)이 끝나는 곳
+	total              float64    // 전체 길이 = 영상 끝, 또는 ‘영상 끝나도 계속’ 배경음악이 끝나는 곳 (model.js CR.spanOf)
 }
 
 func newPlan(spec map[string]any) *plan {

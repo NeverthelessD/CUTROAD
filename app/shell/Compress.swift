@@ -26,7 +26,7 @@ enum Compressor {
         }
         let started = Date()
         let tmp = dir.appendingPathComponent(".\(UUID().uuidString.prefix(8)).cutroad-part.mp4")
-        defer { try? FileManager.default.removeItem(at: tmp) }
+        defer { try? FileManager.default.removeItem(at: tmp); Exporter.cleanup(tmp) }
         do {
             guard FileManager.default.fileExists(atPath: src.path) else {
                 throw RenderError("파일을 찾을 수 없어요: \(src.lastPathComponent)")

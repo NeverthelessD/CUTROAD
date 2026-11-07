@@ -78,7 +78,7 @@ enum Exporter {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let dest = uniqueURL(dir: dir, name: str(out, "name", "CUTROAD"), ext: ext)
             let tmp = dir.appendingPathComponent(".\(UUID().uuidString.prefix(8)).cutroad-part.\(ext)")
-            defer { try? FileManager.default.removeItem(at: tmp) }
+            defer { try? FileManager.default.removeItem(at: tmp); Exporter.cleanup(tmp) }
             Log.write("내보내기 시작: \(preset) → \(dest.lastPathComponent)")
             let plan = Plan(spec)
             var note = ""
@@ -117,6 +117,13 @@ enum Exporter {
     static func friendly(_ e: Error) -> String {
         if let r = e as? RenderError { return r.message }
         return "영상을 만들지 못했어요 (" + detail(e) + ")"
+    }
+
+    /// 맥이 파일을 마무리하며 옆에 남기는 숨김 사본(‘…cutroad-part.mp4.sb-…’, 결과와 같은 크기)을 지워요 (1.5.0)
+    static func cleanup(_ tmp: URL) {
+        let dir = tmp.deletingLastPathComponent(), prefix = tmp.lastPathComponent + ".sb-"
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+        for n in names where n.hasPrefix(prefix) { try? FileManager.default.removeItem(at: dir.appendingPathComponent(n)) }
     }
 
     static func uniqueURL(dir: URL, name: String, ext: String) -> URL {

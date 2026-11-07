@@ -36,9 +36,10 @@ app/shell/Render.swift    프로젝트 → AVMutableComposition + 직접 만든 
 app/shell/Export.swift    MP4(H.264+AAC, AVAssetWriter) · GIF(ImageIO) · 컷 편집만(Passthrough, 안 되면 다시 인코딩) · 작업 목록(Jobs)
 app/shell/Captions.swift  자동 자막: 영상 소리만 m4a 로 → SFSpeechRecognizer → 줄 나누기
 app/shell/Photos.swift   사진 폴더 읽기 · 사진 정보/미리보기 JPG(cache/img) · 음악 박자 찾기(Accelerate FFT, cache/beats)
+app/shell/Compress.swift  용량 줄이기(Compressor) · 소리 고르게(AudioComp · Dynamics) — 1.5.0
 app/shell/TestTools.swift 시험용 명령 (--test-sample · --test-export · --test-frame …)
-engine/                   Go 엔진: main.go(경로 · 설정 · 프로젝트 · /api/media) · projects.go · update.go · supervise.go · diag.go
-engine/web/               화면: index.html · css/app.css · js/{util,model,player,timeline,panels,dialogs,main}.js · fonts/
+engine/                   Go 엔진: main.go(경로 · 설정 · 프로젝트 · /api/media) · projects.go · update.go · supervise.go · diag.go · compress.go(Windows 용량 줄이기)
+engine/web/               화면: index.html · css/app.css · js/{util,win,model,player,timeline,panels,dialogs,compress,main}.js · fonts/
 scripts/                  build-mac.sh · ci-mac.sh · smoke-mac.sh · release.sh · publish-download.sh · feed.py · guide.py
 docs/                     guide.html → CUTROAD_사용가이드.png · guide-win.html → CUTROAD_Windows_사용가이드.png (scripts/guide.py)
 
@@ -78,6 +79,23 @@ scripts/build-whisper-win.sh whisper.cpp → engine/assets/whisper-cli.exe (MinG
 - 엔진 주소 47931 (MSROAD 47917 과 겹치지 않게).
 
 ## 작업 기록
+- 2026-11-07 v1.5.0 — 사용자 요청: 영상 컴프레서(용량 줄이기) · 오디오 컴프레서. 사용자 결정: 모드는 카톡 보내기용 · 크기 직접 정하기 · 화질 위주로 조금만,
+  여러 파일 한 번에, 편집한 영상 내보내기에도 용량 선택지.
+  · 용량 계획은 화면 한 곳(compress.js CR.sizePlan)에서만 계산: 결과 크기(W×H) · 영상/소리 비트레이트 · 예상 크기. 맥/Windows 는 받은 값대로 만들기만.
+    카톡 = 280MB 목표(한도 300MB) · 1080p 까지 · 0.07bpp 상한, 크기 정하기 = 목표×0.94 예산 · 0.1bpp 상한, 화질 위주 = 원본 비트레이트의 60%(HEVC 45%) · 0.1bpp 상한.
+    화질이 너무 낮아지면(0.035bpp 아래) 짧은 변을 2160→1440→1080→720→540→480→360 으로 낮춤. HEVC 는 같은 화질에 0.6배.
+    목표 크기를 넘으면 비트레이트를 (목표/결과×0.93)배로 한 번 더 만들어 같은 파일을 바꿈(replace). 이미 작으면 건너뜀.
+  · 용량 줄이기 창(처음 화면 버튼 · 파일 메뉴): 원본 옆에 ‘이름 (작게).mp4’, 폴더에 못 쓰면 동영상 폴더. 창에 끌어다 놓기 됨(CR.onModalDrop).
+    맥 Compress.swift: AVVideoComposition(돌리기 · 크기 · BT.709, HDR→SDR) → AVAssetWriter(H.264/HEVC). Windows compress.go: ffmpeg libx264 바로(autorotate).
+    HEVC 는 맥에서만 고를 수 있음(하드웨어). 맥은 AVVideoDataRateLimitsKey 가 없어서(빌드 오류) 평균 비트레이트 + 다시 만들기로 맞춤.
+  · 내보내기 창 「용량」: 보통 · 카톡 보내기용 · 크기 정하기 · 조금만 줄이기 (+맥 HEVC) → out.vbps/abps/maxShort/codec. 보통이면 예전과 똑같이.
+  · 소리 고르게(오디오 컴프레서): 프로젝트 설정 끔/약하게/보통/강하게 (P.audioComp). 값 표 CR.AUDIO_COMP 하나를 spec.audioComp 로 보내 세 곳이 같은 값:
+    미리보기 Web Audio DynamicsCompressor(무릎 6dB) → 보정 → 리미터(-1dB), 맥 Dynamics(직접 계산, 두 채널 같이, 봉우리 기준),
+    Windows acompressor(knee 2 = 6dB, peak, link max) + alimiter(0.891, level=disabled). 내보내기만, 자동 자막 · 컷 편집만은 원래 소리.
+  · 고친 것: 맥에서 내보낼 때마다 저장 폴더에 결과와 같은 크기의 숨김 사본(.XXXX.cutroad-part.mp4.sb-…)이 남던 문제(1.0~).
+    내보내기 · 용량 줄이기 끝에 지우고(Exporter.cleanup), 엔진이 켤 때 저장 폴더 · 동영상 폴더의 1시간 넘은 사본을 지움(cleanupPartLeftovers).
+  · 시험: 리눅스 Go(줄이기 · 다시 만들기 replace · 돌린 영상 세로로 · 내보내기 960×540 + 소리 고르게), Chromium 화면(창 · 예상 크기 · 내보내기 out 값),
+    맥 X5d · Z1~Z6 추가.
 - 2026-11-07 v1.4.0 — 사용자 요청: 영상이 끝난 뒤에도 음악이 계속 나오게.
   · 배경음악마다 「영상이 끝나도 음악 계속 (뒤는 검은 화면)」 켜기/끄기(오른쪽 패널, 기본 끔 — 예전 프로젝트는 그대로). 저장 필드 audio[].keep.
   · 전체 길이 = 영상 끝(vEnd)과 keep 음악 끝 중 늦은 쪽. 같은 계산이 세 곳: model.js CR.spanOf/CR.audioEnd · Render.swift Plan.timing/audioEnd · plan.go timing/audioEnd.

@@ -124,6 +124,7 @@ zspec "$M/z/바다.mov" "$M/z" "바다 (작게)" 320 180 150000 h264 "$M/z/바�
 "$BIN" --test-compress "$M/z3.json" > "$OUT/compress-3.json" 2>&1; Z5=$?; cat "$OUT/compress-3.json"
 check "Z5 목표에 맞춰 다시 만들면 같은 파일을 바꿈 ('(2)' 없음)" bash -c "test $Z5 = 0 && test ! -e '$M/z/바다 (작게) (2).mp4' && test -s '$M/z/바다 (작게).mp4'"
 ls -la "$M/z" > "$OUT/compress-files.txt"
+check "Z6 숨김 임시 파일이 남지 않음 (용량 줄이기 · 내보내기)" bash -c "! ls -a '$M/z' '$M/out' | grep -q 'cutroad-part'"
 
 python3 - "$SPEC" vertical "세로" > "$M/spec-v.json" <<'PY'
 import json, sys

@@ -523,13 +523,13 @@ func (n *Nat) newRenderer(ctx context.Context, p *plan, preset string) (*rendere
 // ---------------------------------------------------------------- 소리 (ffmpeg 필터)
 
 type audioInput struct {
-	path        string
-	a, b        float64 // 원본에서 쓸 구간
-	tempo       float64
-	at          float64 // 타임라인에 놓는 시각
-	dur         float64 // 타임라인 위 길이
-	vol         float64
-	inR, outR   float64
+	path      string
+	a, b      float64 // 원본에서 쓸 구간
+	tempo     float64
+	at        float64 // 타임라인에 놓는 시각
+	dur       float64 // 타임라인 위 길이
+	vol       float64
+	inR, outR float64
 }
 
 func (n *Nat) hasAudioStream(path string) (bool, float64) {

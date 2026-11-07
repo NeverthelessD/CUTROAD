@@ -4,8 +4,9 @@
 // 이 엔진이 하는 일: 앱 화면(web/) 보여 주기 · 프로젝트 저장 · 설정 · 영상/소리 파일을 화면에 보내기(미리보기용) ·
 // 자동 업데이트 · 진단 기록.
 // 영상 처리(내보내기 · 파형 · 썸네일 · 자동 자막)는
-//   맥: 앱 껍데기(app/shell, Swift)가 맥 내장 기능(AVFoundation · Speech)으로 해요.
-//   Windows: 이 엔진이 ffmpeg(처음 켤 때 받아요) · whisper(자동 자막을 처음 쓸 때 받아요)로 해요 (nat*.go, render*.go).
+//
+//	맥: 앱 껍데기(app/shell, Swift)가 맥 내장 기능(AVFoundation · Speech)으로 해요.
+//	Windows: 이 엔진이 ffmpeg(처음 켤 때 받아요) · whisper(자동 자막을 처음 쓸 때 받아요)로 해요 (nat*.go, render*.go).
 package main
 
 import (
@@ -22,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"runtime/debug"
 	"strconv"
@@ -109,6 +111,9 @@ func main() {
 		log.SetOutput(io.MultiWriter(os.Stderr, f))
 	}
 	app.loadSettings()
+	if home, err := os.UserHomeDir(); err == nil {
+		go cleanupPartLeftovers(app.settings.ExportDir, defaultExportDir(home))
+	}
 	touch()
 	app.upd = NewUpdater(support)
 	app.projects = NewProjects(filepath.Join(support, "projects"))
@@ -663,4 +668,32 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return os.Rename(tmp, dst)
+}
+
+// cleanupPartLeftovers: 1.4 까지 맥에서 내보낼 때 옆에 남던 숨김 사본(.XXXXXXXX.cutroad-part.mp4.sb-…, 결과와 같은 크기)을 지워요.
+// CUTROAD 가 만든 이름 모양만, 1시간 넘게 지난 것만 (지금 만들고 있는 파일은 건드리지 않게) — 1.5.0
+var partLeftover = regexp.MustCompile(`^\.[0-9A-Za-z]{4,8}\.cutroad-part\.(mp4|gif)\.sb-`)
+
+func cleanupPartLeftovers(dirs ...string) {
+	seen := map[string]bool{}
+	for _, d := range dirs {
+		if d == "" || seen[d] {
+			continue
+		}
+		seen[d] = true
+		ents, err := os.ReadDir(d)
+		if err != nil {
+			continue
+		}
+		for _, e := range ents {
+			if e.IsDir() || !partLeftover.MatchString(e.Name()) {
+				continue
+			}
+			if info, err := e.Info(); err == nil && time.Since(info.ModTime()) > time.Hour {
+				if os.Remove(filepath.Join(d, e.Name())) == nil {
+					log.Printf("남은 임시 사본 지움: %s (%dMB)", e.Name(), info.Size()/1_000_000)
+				}
+			}
+		}
+	}
 }
