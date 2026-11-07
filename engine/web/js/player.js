@@ -156,8 +156,9 @@ CR.Player = {
         t = k < L.list.length ? L.starts[k] : L.total;
       }
     }
-    if (t >= L.total) {
-      CR.S.t = L.total;
+    const end = CR.total();
+    if (t >= end) {
+      CR.S.t = end;
       this.pause();
       CR.onTime && CR.onTime();
       return;
@@ -189,7 +190,7 @@ CR.Player = {
     for (let i = 0; i < L.list.length; i++) {
       if (t >= L.starts[i] - 1e-6 && t < L.end(i) - 1e-6) active.push(i);
     }
-    if (!active.length && L.list.length && t >= L.total - 1e-3) active.push(L.list.length - 1);
+    if (!active.length && L.list.length && t >= L.total - 1e-3 && t <= L.total + 1e-3) active.push(L.list.length - 1); // 영상이 끝난 뒤(음악만 계속)는 검은 화면
     const layers = [];
     const used = new Set();
     active.slice(-2).forEach((i) => {
@@ -407,7 +408,7 @@ CR.Player = {
       CR.P.audio.forEach((a) => {
         const m = CR.media(a.mediaId);
         if (!m || m.missing) return;
-        const st = a.start, e = Math.min(L.total, a.start + (a.out - a.in));
+        const st = a.start, e = CR.audioEnd(a, L.total, L.span !== undefined ? L.span : L.total);
         if (t < st || t >= e) return;
         seen.add(a.id);
         let el = this.bgm.get(a.id);

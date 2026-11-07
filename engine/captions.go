@@ -70,7 +70,7 @@ func (n *Nat) transcribe(spec map[string]any, j *Job) ([]map[string]any, error) 
 	defer os.RemoveAll(tmpDir)
 	wav := filepath.Join(tmpDir, "audio.wav")
 	j.set(base, "소리 준비 중")
-	ok, err := n.buildAudio(j.ctx, p, false, 0, p.total, wav, []string{"-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le"})
+	ok, err := n.buildAudio(j.ctx, p, false, 0, p.vEnd, wav, []string{"-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le"})
 	if err != nil {
 		return nil, err
 	}

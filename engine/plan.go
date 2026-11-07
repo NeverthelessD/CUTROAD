@@ -67,10 +67,11 @@ type audioSpec struct {
 	path                         string
 	start, inT, outT             float64
 	volume, fadeIn, fadeOut      float64
+	keep                         bool // 영상이 끝나도 계속 (뒤는 검은 화면) — 1.4.0
 }
 
 func newAudioSpec(d map[string]any) audioSpec {
-	a := audioSpec{path: mStr(d, "path")}
+	a := audioSpec{path: mStr(d, "path"), keep: mBool(d, "keep", false)}
 	a.start = math.Max(0, mNum(d, "start", 0))
 	a.inT = math.Max(0, mNum(d, "in", 0))
 	a.outT = math.Max(a.inT+0.05, mNum(d, "out", a.inT+1))
@@ -199,7 +200,8 @@ type plan struct {
 	bgBlur, photoFrame bool
 	beatFx             beatFx
 	starts, trans      []float64
-	total              float64
+	vEnd               float64 // 영상(클립)이 끝나는 곳
+	total              float64 // 전체 길이 = 영상 끝, 또는 ‘영상 끝나도 계속’ 배경음악이 끝나는 곳 (model.js CR.spanOf)
 }
 
 func newPlan(spec map[string]any) *plan {
@@ -251,10 +253,25 @@ func (p *plan) timing() {
 		}
 		t += p.clips[i].dur() - p.trans[i]
 	}
-	p.total = 0
+	p.vEnd = 0
 	if n > 0 {
-		p.total = p.starts[n-1] + p.clips[n-1].dur()
+		p.vEnd = p.starts[n-1] + p.clips[n-1].dur()
 	}
+	p.total = p.vEnd
+	for _, a := range p.audio {
+		if a.keep && a.start < p.vEnd+1e-6 {
+			p.total = math.Max(p.total, a.start+(a.outT-a.inT))
+		}
+	}
+}
+
+// audioEnd: 배경음악이 실제로 나오는 끝 (model.js CR.audioEnd)
+func (p *plan) audioEnd(a audioSpec) float64 {
+	lim := p.vEnd
+	if a.keep {
+		lim = p.total
+	}
+	return math.Min(lim, a.start+(a.outT-a.inT))
 }
 
 func (p *plan) end(i int) float64 { return p.starts[i] + p.clips[i].dur() }

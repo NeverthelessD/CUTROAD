@@ -82,7 +82,9 @@ struct AudioSpec {
     let volume: Double
     let fadeIn: Double
     let fadeOut: Double
+    let keep: Bool            // 영상이 끝나도 계속 (뒤는 검은 화면) — 1.4.0
     init(_ d: [String: Any]) {
+        keep = (d["keep"] as? Bool) ?? false
         path = str(d, "path", "")
         start = max(0, num(d, "start", 0))
         inT = max(0, num(d, "in", 0))
@@ -285,7 +287,8 @@ struct Plan {
     var beatFx: BeatFx
     var starts: [Double] = []
     var trans: [Double] = []   // trans[i] = 클립 i 와 i+1 사이 트랜지션 길이
-    var total: Double = 0
+    var vEnd: Double = 0       // 영상(클립)이 끝나는 곳
+    var total: Double = 0      // 전체 길이 = 영상 끝, 또는 ‘영상 끝나도 계속’ 배경음악이 끝나는 곳 (model.js CR.spanOf)
 
     init(_ spec: [String: Any]) {
         clips = (spec["clips"] as? [[String: Any]] ?? []).map(ClipSpec.init).filter { !$0.path.isEmpty }
@@ -312,8 +315,12 @@ struct Plan {
             }
             t += clips[i].dur - trans[i]
         }
-        total = n > 0 ? starts[n - 1] + clips[n - 1].dur : 0
+        vEnd = n > 0 ? starts[n - 1] + clips[n - 1].dur : 0
+        total = audio.reduce(vEnd) { mx, a in a.keep && a.start < vEnd + 1e-6 ? max(mx, a.start + (a.outT - a.inT)) : mx }
     }
+
+    /// 배경음악이 실제로 나오는 끝 (model.js CR.audioEnd)
+    func audioEnd(_ a: AudioSpec) -> Double { min(a.keep ? total : vEnd, a.start + (a.outT - a.inT)) }
 
     func end(_ i: Int) -> Double { starts[i] + clips[i].dur }
 
@@ -827,10 +834,10 @@ enum Builder {
         var bgmPlans: [(AVMutableCompositionTrack, AudioSpec, Double, Double)] = []
         if includeBGM {
             for x in plan.audio.sorted(by: { $0.start < $1.start }) {
-                guard x.start < plan.total - 0.05 else { continue }
+                guard x.start < plan.vEnd - 0.05 else { continue }
                 let a = try asset(x.path)
                 guard let sa = a.tracks(withMediaType: .audio).first else { continue }
-                let outT = min(x.outT, x.inT + (plan.total - x.start))
+                let outT = min(x.outT, x.inT + (plan.audioEnd(x) - x.start))
                 guard outT > x.inT + 0.05 else { continue }
                 let idx = bTracks.firstIndex(where: { $0.1 <= x.start + 0.0001 })
                 let tr: AVMutableCompositionTrack
@@ -904,6 +911,14 @@ enum Builder {
                 if plan.trans[i] > 0, i + 1 < plan.clips.count {
                     add(soloE, plan.end(i), [layers[i], layers[i + 1]], plan.clips[i].transType, soloE, plan.trans[i])
                 }
+            }
+            // 영상이 끝난 뒤 음악만 계속되는 부분: 검은 화면(+ 글자)
+            let vEndT = ins.last?.timeRange.end ?? .zero
+            if plan.total > plan.vEnd + 0.05, compEnd.seconds > vEndT.seconds + 0.05 {
+                for vt in vTracks where vt.timeRange.end < compEnd {
+                    vt.insertEmptyTimeRange(CMTimeRange(start: vt.timeRange.end, end: compEnd))
+                }
+                ins.append(Instruction(range: CMTimeRange(start: vEndT, end: compEnd), layers: [], transition: nil, tStart: 0, tDur: 0, shared: shared))
             }
             // 마지막 장면이 컴포지션 끝까지 닿게 (반올림 오차)
             if let last = ins.last, last.timeRange.end < compEnd {

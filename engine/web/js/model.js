@@ -67,12 +67,23 @@ CR.layout = function () {
       end: q.end, dur: (c) => c.out - c.in };
   }
   const tm = CR.timing(CR.kept());
-  return Object.assign(tm, { quick: false, dur: CR.dur });
+  return Object.assign(tm, { quick: false, dur: CR.dur, span: CR.spanOf(CR.P, tm.total) });
+};
+
+/** 프로젝트 전체 길이: 영상 끝, 또는 ‘영상 끝나도 계속’ 켠 배경음악이 끝나는 곳 중 늦은 쪽 (그 사이는 검은 화면)
+ *  Render.swift(Plan.timing) · plan.go(timing) 와 같은 계산 */
+CR.spanOf = function (P, vEnd) {
+  if (!P || !P.audio) return vEnd;
+  return P.audio.reduce((mx, a) => (a.keep && a.start < vEnd + 1e-6 ? Math.max(mx, a.start + (a.out - a.in)) : mx), vEnd);
+};
+/** 배경음악이 실제로 나오는 끝 */
+CR.audioEnd = function (a, vEnd, span) {
+  return Math.min(a.keep ? span : vEnd, a.start + (a.out - a.in));
 };
 
 CR.total = function () {
   const L = CR.layout();
-  return L.total;
+  return L.span !== undefined ? L.span : L.total;
 };
 
 /** 타임라인 시각 t 에 있는 클립 (트랜지션 겹침이면 뒤 클립) */
@@ -150,7 +161,7 @@ CR.select = function (type, id) {
 CR.saveNow = async function () {
   if (!CR.P) return;
   const L = CR.timing(CR.kept());
-  CR.P.duration = L.total;
+  CR.P.duration = CR.spanOf(CR.P, L.total);
   const first = CR.P.clips.find((c) => !c.removed);
   const m = first && CR.media(first.mediaId);
   const th = m && CR.cache.thumbs[m.path];
@@ -487,7 +498,7 @@ CR.spec = function (opt) {
       blur: opt.plain ? 0 : c.blur, rotate: opt.plain ? 0 : c.rotate, trans: opt.plain ? null : c.trans,
       motion: opt.plain ? 'none' : c.motion, motionAmt: c.motionAmt === undefined ? 1 : c.motionAmt, filter: opt.plain ? 'none' : c.filter };
   });
-  const audio = opt.plain ? [] : P.audio.map((a) => ({ path: path(a.mediaId), start: a.start, in: a.in, out: a.out, volume: a.volume, fadeIn: a.fadeIn, fadeOut: a.fadeOut }));
+  const audio = opt.plain ? [] : P.audio.map((a) => ({ path: path(a.mediaId), start: a.start, in: a.in, out: a.out, volume: a.volume, fadeIn: a.fadeIn, fadeOut: a.fadeOut, keep: !!a.keep }));
   let texts = opt.plain ? [] : P.texts.slice();
   if (opt.captions === 'none' || opt.captions === 'srt') texts = texts.filter((x) => x.kind !== 'caption');
   const out = { clips, audio, texts: texts.map((x) => ({ text: x.text, start: x.start, end: x.end, pos: x.pos, size: x.size, box: x.box })),

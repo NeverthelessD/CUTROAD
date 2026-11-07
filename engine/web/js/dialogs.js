@@ -154,7 +154,7 @@ CR.openExport = function (forced) {
           h('button', { class: st.captions === k ? 'on' : '', onclick: () => { st.captions = k; draw(); } }, label)))));
     }
     const [W, H] = CR.outSize(st.preset);
-    const dur = st.preset === 'gif' ? st.range[1] - st.range[0] : L.total;
+    const dur = st.preset === 'gif' ? st.range[1] - st.range[0] : quick ? L.total : CR.spanOf(CR.P, L.total);
     const fps = 30;
     const bytes = st.preset === 'gif' ? W * H * dur * 12 * 0.12 : st.preset === 'quick'
       ? CR.kept().reduce((s, c) => { const m = CR.media(c.mediaId); return s + (m && m.size && m.duration ? m.size * (c.out - c.in) / m.duration : 0); }, 0)

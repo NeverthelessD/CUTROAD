@@ -448,3 +448,7 @@ select.pick { appearance: none; -webkit-appearance: none; padding-right: 30px; b
 .toolsbox .bar { height: 6px; border-radius: 3px; background: var(--field); overflow: hidden; }
 .toolsbox .bar > div { height: 100%; background: var(--accent); transition: width .3s; }
 .toolsbox .btn { align-self: flex-start; }
+/* 영상이 끝난 뒤 음악만 계속되는 구간 (1.4.0) */
+.track.video .blackpad { position: absolute; top: 0; bottom: 0; border-radius: 6px; background: repeating-linear-gradient(135deg, #111 0 8px, #1c1c1c 8px 16px);
+  border: 1px solid var(--line2); display: flex; align-items: center; justify-content: center; pointer-events: none; overflow: hidden; }
+.track.video .blackpad span { font-size: 11px; color: #9a9a9a; white-space: nowrap; }

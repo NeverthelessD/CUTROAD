@@ -78,6 +78,20 @@ check "X4 결과 장면 그림 (글자 · 트랜지션 · 블러)" test -s "$OUT
 "$BIN" --test-export "$SPEC" > /dev/null 2>&1
 check "X5 같은 이름이면 '(2)'를 붙여 따로 저장" test -s "$M/out/여름 여행 (2).mp4"
 
+# 1.4.0: 영상이 끝나도 음악 계속 → 영상 7초 + 검은 화면, 음악(0.5초부터 10초) 끝 = 10.5초
+python3 - "$SPEC" > "$M/spec-keep.json" <<'PY'
+import json, sys
+s = json.load(open(sys.argv[1])); s["audio"][0]["keep"] = True
+s["texts"].append({"text": "끝", "start": 8, "end": 10, "pos": "center", "size": "l", "box": False})
+s["out"]["name"] = "음악 계속"; print(json.dumps(s, ensure_ascii=False))
+PY
+"$BIN" --test-export "$M/spec-keep.json" > "$OUT/export-keep.json" 2>&1; EK=$?; cat "$OUT/export-keep.json"
+DK=$(dur_of "$M/out/음악 계속.mp4")
+test "$EK" = "0" && near "${DK:-0}" 10.5 0.25; EKD=$?
+check "X5b 영상이 끝나도 음악 계속 (결과 ${DK:-?}초, 10.5초여야 함)" test "$EKD" = "0"
+"$BIN" --test-frame "$M/out/음악 계속.mp4" 9 "$OUT/frame-keep-black.png"
+check "X5c 영상 뒤 검은 화면 장면 그림" test -s "$OUT/frame-keep-black.png"
+
 python3 - "$SPEC" vertical "세로" > "$M/spec-v.json" <<'PY'
 import json, sys
 s = json.load(open(sys.argv[1])); s["out"]["preset"] = sys.argv[2]; s["out"]["name"] = sys.argv[3]; print(json.dumps(s, ensure_ascii=False))

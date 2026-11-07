@@ -69,7 +69,7 @@ CR.onTime = function () {
   if (CR.V.tc) {
     const L = CR.layout();
     CR.V.tc.textContent = '';
-    CR.V.tc.append(CR.tc(CR.S.t), ' ', h('span', null, '/ ' + CR.tc(L.total)));
+    CR.V.tc.append(CR.tc(CR.S.t), ' ', h('span', null, '/ ' + CR.tc(CR.total())));
     if (L.quick && L.kept !== L.total) CR.V.tc.appendChild(h('span', null, ' → 남는 길이 ' + CR.short(L.kept)));
   }
   CR.onTimeTimeline();
@@ -466,7 +466,11 @@ CR.inspectAudio = function (body, a) {
     field('시작 위치', null, h('div', { class: 'row' },
       numBox('타임라인', CR.round(a.start, 2), '초', (v) => CR.edit('배경음악 위치', () => { const tot = CR.total(); a.start = CR.round(CR.clamp(v, 0, tot > 1 ? tot - 1 : Math.max(0, v)), 3); })),
       h('button', { class: 'btn', onclick: () => CR.edit('배경음악 위치', () => { a.start = CR.round(CR.S.t, 3); }) }, '재생 위치로'))),
-    h('p', { class: 'hint' }, '영상보다 길면 영상이 끝날 때 함께 끝나요. 끝부분은 페이드 아웃으로 부드럽게 줄어들어요.'),
+    h('label', { class: 'check' }, (() => { const cb = h('input', { type: 'checkbox', checked: !!a.keep });
+      cb.addEventListener('change', () => CR.edit(cb.checked ? '영상 끝나도 음악 계속' : '영상 끝나면 음악도 끝', () => { if (cb.checked) a.keep = true; else delete a.keep; })); return cb; })(),
+      '영상이 끝나도 음악 계속 (뒤는 검은 화면)'),
+    h('p', { class: 'hint' }, a.keep ? '영상이 끝난 뒤에도 음악이 끝까지 나와요. 그동안 화면은 검게 나오고, 글자는 넣을 수 있어요.'
+      : '영상보다 길면 영상이 끝날 때 함께 끝나요. 끝부분은 페이드 아웃으로 부드럽게 줄어들어요.'),
     h('div', { class: 'actions' },
       h('button', { class: 'btn', onclick: () => CR.split() }, I('scissors'), '재생 위치에서 자르기'),
       h('button', { class: 'btn danger', onclick: () => CR.deleteSel() }, I('trash'), '지우기')));
@@ -489,7 +493,7 @@ CR.inspectProject = function (body) {
     CR.timelineBeats().beats.length ? field('박자 효과', null, h('div', { class: 'chips2' }, CR.BEATFX.map(([k, label]) =>
       h('button', { class: P.beatFx[k] ? 'on' : '', onclick: () => CR.edit('박자 효과', () => { P.beatFx[k] = !P.beatFx[k]; }) }, label)))) : null,
     h('div', { class: 'facts', style: { padding: '10px 12px' } },
-      h('div', null, h('small', null, '길이'), h('b', null, CR.short(L.total))),
+      h('div', null, h('small', null, '길이'), h('b', null, CR.short(CR.spanOf(P, L.total)))),
       h('div', null, h('small', null, '클립'), h('b', null, String(L.list.length))),
       h('div', null, h('small', null, '글자'), h('b', null, String(P.texts.length)))),
     h('p', { class: 'hint' }, CR.T('타임라인에서 클립 · 글자 · 배경음악을 누르면 여기서 자세히 바꿀 수 있어요.\nSpace 재생 · ⌘B 자르기 · ⌫ 지우기 · ⌘Z 되돌리기')));
@@ -534,7 +538,7 @@ CR.status = function () {
     const gone = P.clips.filter((c) => c.removed).length;
     info = '조각 ' + P.clips.length + '개 · ' + gone + '개 지움 · 남는 길이 ' + CR.human(L.kept);
   } else {
-    info = '클립 ' + L.list.length + '개 · 길이 ' + CR.human(L.total);
+    info = '클립 ' + L.list.length + '개 · 길이 ' + CR.human(CR.total());
   }
   const saved = CR.S.settings.autoSave === false ? (CR.S.saved ? '저장됨' : CR.T('저장 안 됨 · ⌘S')) : (CR.S.saved ? '자동 저장됨' : '저장 중…');
   s.append(h('span', null, nameBtn, ' · ' + saved + ' · ' + info), h('span', { class: 'made' }, 'made by. Nevertheless_D'));

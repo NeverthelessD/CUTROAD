@@ -331,8 +331,8 @@ func (r *renderer) frameAt(t float64) (*image.RGBA, error) {
 			break
 		}
 	}
-	if cur < 0 && n > 0 {
-		cur = n - 1 // 끝 (반올림 오차): 마지막 장면
+	if cur < 0 && n > 0 && t < p.vEnd+0.5/float64(max(1, r.fps)) {
+		cur = n - 1 // 끝 (반올림 오차): 마지막 장면. 그보다 뒤(음악만 계속)는 검은 화면
 	}
 	// 지난 클립의 ffmpeg 는 닫아요
 	for k, L := range r.layers {
@@ -572,14 +572,14 @@ func (n *Nat) audioInputs(p *plan, includeBGM bool) []audioInput {
 	}
 	if includeBGM {
 		for _, x := range p.audio {
-			if x.start >= p.total-0.05 {
+			if x.start >= p.vEnd-0.05 {
 				continue
 			}
 			ok, srcDur := n.hasAudioStream(x.path)
 			if !ok {
 				continue
 			}
-			outT := math.Min(x.outT, x.inT+(p.total-x.start))
+			outT := math.Min(x.outT, x.inT+(p.audioEnd(x)-x.start))
 			if srcDur > 0 {
 				outT = math.Min(outT, srcDur)
 			}
@@ -909,9 +909,9 @@ func (n *Nat) writeGIF(j *Job, p *plan, out map[string]any, tmp string) error {
 	if err != nil {
 		return err
 	}
-	a, b := 0.0, math.Min(p.total, 10)
+	a, b := 0.0, math.Min(p.vEnd, 10) // GIF 는 소리가 없어서 영상 부분만 (Export.swift 와 같음)
 	if rg := numSlice(out["range"]); len(rg) == 2 && rg[1] > rg[0] {
-		a, b = math.Max(0, rg[0]), math.Min(p.total, rg[1])
+		a, b = math.Max(0, rg[0]), math.Min(p.vEnd, rg[1])
 	}
 	b = math.Min(b, a+30)
 	if b-a <= 0.1 {

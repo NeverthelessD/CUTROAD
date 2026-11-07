@@ -389,11 +389,11 @@ CR.renderTimeline = function (host) {
     if (env) blk.appendChild(env);
     blk.appendChild(h('span', { class: 'nm', style: { left: Math.max(8, a.fadeIn * pps + 8) + 'px' } }, (m ? m.name : '?') + ' · 볼륨 ' + Math.round(a.volume * 100) + '%'));
     blk.append(h('div', { class: 'h l' }), h('div', { class: 'h r' }));
-    if (L.total > 0 && a.start + len > L.total) {
+    if (L.total > 0 && !a.keep && a.start + len > L.total) {
       const sx = Math.max(0, X(L.total - a.start));
       blk.appendChild(h('div', { style: { position: 'absolute', top: 0, bottom: 0, left: sx + 'px', right: 0, background: 'color-mix(in srgb, var(--panel) 65%, transparent)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', color: 'var(--dim)', whiteSpace: 'nowrap', overflow: 'hidden', pointerEvents: 'none' },
-        title: '영상이 끝난 뒤라 나오지 않아요' }, w - sx > 150 ? '영상이 끝난 뒤라 안 나와요 · 앞으로 끌어 옮기세요' : ''));
+        title: '영상이 끝난 뒤라 나오지 않아요. 음악을 고르고 오른쪽에서 ‘영상이 끝나도 음악 계속’을 켜면 끝까지 나와요' }, w - sx > 150 ? (w - sx > 330 ? '영상이 끝난 뒤라 안 나와요 · 오른쪽에서 ‘영상이 끝나도 음악 계속’을 켜면 나와요' : '영상이 끝난 뒤라 안 나와요') : ''));
     }
     blk.addEventListener('pointerdown', (e) => {
       CR.select('audio', a.id);
@@ -426,6 +426,13 @@ CR.renderTimeline = function (host) {
     tBgm.appendChild(blk);
   });
 
+  // 영상이 끝난 뒤 음악만 계속되는 구간 = 검은 화면
+  const pEnd = CR.total();
+  if (!L.quick && L.list.length && pEnd > L.total + 0.05) {
+    const bw = X(pEnd - L.total);
+    tVid.appendChild(h('div', { class: 'blackpad', style: { left: X(L.total) + 'px', width: bw + 'px' }, title: '음악만 계속 나오는 부분 (검은 화면)' },
+      bw > 70 ? h('span', null, '검은 화면') : null));
+  }
   CR.put(inner, tText, tVid, tAud, tBeat, tBgm);
   if (!L.list.length) inner.appendChild(h('div', { class: 'tlempty' }, '영상 파일을 끌어다 놓거나 [가져오기]를 누르세요'));
   const ph = h('div', { class: 'playhead', style: { left: X(CR.S.t) + 8 + 'px' } });
