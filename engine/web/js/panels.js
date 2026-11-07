@@ -464,7 +464,7 @@ CR.inspectAudio = function (body, a) {
       numBox('인', a.fadeIn, '초', (v) => CR.edit('페이드 인', () => { a.fadeIn = CR.round(v, 2); }), { max: 20 }),
       numBox('아웃', a.fadeOut, '초', (v) => CR.edit('페이드 아웃', () => { a.fadeOut = CR.round(v, 2); }), { max: 20 }))),
     field('시작 위치', null, h('div', { class: 'row' },
-      numBox('타임라인', CR.round(a.start, 2), '초', (v) => CR.edit('배경음악 위치', () => { a.start = CR.round(v, 3); })),
+      numBox('타임라인', CR.round(a.start, 2), '초', (v) => CR.edit('배경음악 위치', () => { const tot = CR.total(); a.start = CR.round(CR.clamp(v, 0, tot > 1 ? tot - 1 : Math.max(0, v)), 3); })),
       h('button', { class: 'btn', onclick: () => CR.edit('배경음악 위치', () => { a.start = CR.round(CR.S.t, 3); }) }, '재생 위치로'))),
     h('p', { class: 'hint' }, '영상보다 길면 영상이 끝날 때 함께 끝나요. 끝부분은 페이드 아웃으로 부드럽게 줄어들어요.'),
     h('div', { class: 'actions' },

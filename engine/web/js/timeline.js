@@ -172,10 +172,12 @@ CR.renderTimeline = function (host) {
 
   // 확대 정도
   const viewW = scroll.clientWidth || (tl.clientWidth - 96) || 1000;
-  CR.S.fitPps = CR.ppsFor(viewW, L.total);
+  // 영상 끝 뒤로 삐져나간 배경음악도 다 보이게 (그래야 끌어서 앞으로 옮길 수 있어요)
+  const span = (L.quick || !P) ? L.total : P.audio.reduce((mx, a) => Math.max(mx, a.start + (a.out - a.in)), L.total);
+  CR.S.fitPps = CR.ppsFor(viewW, span);
   if (CR.S.zoomFit) CR.S.pps = CR.S.fitPps;
   const pps = CR.S.pps;
-  const innerW = Math.max(viewW, L.total * pps + 48);
+  const innerW = Math.max(viewW, span * pps + 48);
   const inner = h('div', { class: 'tlinner', style: { width: innerW + 'px' } });
   scroll.appendChild(inner);
   CR.TL.inner = inner;
@@ -388,23 +390,28 @@ CR.renderTimeline = function (host) {
     blk.appendChild(h('span', { class: 'nm', style: { left: Math.max(8, a.fadeIn * pps + 8) + 'px' } }, (m ? m.name : '?') + ' · 볼륨 ' + Math.round(a.volume * 100) + '%'));
     blk.append(h('div', { class: 'h l' }), h('div', { class: 'h r' }));
     if (L.total > 0 && a.start + len > L.total) {
-      blk.appendChild(h('div', { style: { position: 'absolute', top: 0, bottom: 0, left: X(L.total - a.start) + 'px', right: 0, background: 'color-mix(in srgb, var(--panel) 65%, transparent)' }, title: '영상이 끝난 뒤라 나오지 않아요' }));
+      const sx = Math.max(0, X(L.total - a.start));
+      blk.appendChild(h('div', { style: { position: 'absolute', top: 0, bottom: 0, left: sx + 'px', right: 0, background: 'color-mix(in srgb, var(--panel) 65%, transparent)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', color: 'var(--dim)', whiteSpace: 'nowrap', overflow: 'hidden', pointerEvents: 'none' },
+        title: '영상이 끝난 뒤라 나오지 않아요' }, w - sx > 150 ? '영상이 끝난 뒤라 안 나와요 · 앞으로 끌어 옮기세요' : ''));
     }
     blk.addEventListener('pointerdown', (e) => {
       CR.select('audio', a.id);
       const side = e.target.classList.contains('l') ? 'l' : e.target.classList.contains('r') ? 'r' : '';
       const o = { start: a.start, in: a.in, out: a.out };
+      // 음악 시작은 영상이 끝나기 1초 전까지만 (그 뒤로는 안 들려요). 이미 더 뒤에 있으면 앞으로만 옮길 수 있어요.
+      const maxStart = L.total > 1 ? L.total - 1 : Math.max(0, o.start);
       CR.live.begin();
       drag(e, pps, (dt) => {
         const md = m ? m.duration : o.out;
         if (side === 'l') {
           const d = CR.clamp(dt, -o.in, o.out - o.in - 0.2);
           const d2 = CR.clamp(snapTo(o.start + d, pps, a.id) - o.start, -o.in, o.out - o.in - 0.2);
-          a.in = CR.round(o.in + d2, 3); a.start = CR.round(Math.max(0, o.start + d2), 3);
+          a.in = CR.round(o.in + d2, 3); a.start = CR.round(CR.clamp(o.start + d2, 0, maxStart), 3);
         } else if (side === 'r') {
           a.out = CR.round(CR.clamp(snapTo(o.start + (o.out - o.in) + dt, pps, a.id) - o.start + o.in, o.in + 0.2, md), 3);
         } else {
-          a.start = CR.round(Math.max(0, snapTo(o.start + dt, pps, a.id)), 3);
+          a.start = CR.round(CR.clamp(snapTo(o.start + dt, pps, a.id), 0, maxStart), 3);
         }
         CR.renderTimeline();
       }, (moved, ev) => {

@@ -292,8 +292,10 @@ CR.appendClip = function (m, index, dur) {
 
 CR.addBGM = function (m, start) {
   if (start === undefined) {
+    // 앞 음악 뒤에 이어 붙이되, 영상이 5초도 안 남으면 처음(0초)부터 (영상 끝 뒤에 놓여 안 들리는 일 막기)
     start = CR.P.audio.reduce((mx, a) => Math.max(mx, a.start + (a.out - a.in)), 0);
-    if (start >= CR.timing(CR.kept()).total - 0.5) start = 0;
+    const tot = CR.timing(CR.kept()).total;
+    if (start > tot - Math.min(5, Math.max(0.5, tot / 2))) start = 0;
   }
   const a = { id: 'a' + CR.uid(), mediaId: m.id, start: CR.round(start, 3), in: 0, out: CR.round(m.duration, 3), volume: 0.6, fadeIn: 1, fadeOut: 1.5 };
   CR.P.audio.push(a);
