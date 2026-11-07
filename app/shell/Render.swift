@@ -330,7 +330,7 @@ struct Plan {
 
     /// 화면 비율과 프리셋에 맞는 결과 크기
     func renderSize(preset: String, fallbackShortSide: Int) -> CGSize {
-        let short: Int
+        var short: Int
         var asp = aspect
         switch preset {
         case "4k": short = 2160
